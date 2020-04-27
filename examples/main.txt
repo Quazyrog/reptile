@@ -1,0 +1,31 @@
+struct Vector:
+  real x = 0
+  real y = 0
+
+function operator6lr+(val a : Vector, val b : Vector) -> Vector:
+  Vector out
+  out.x = a.x + b.x
+  out.y = a.y + b.y
+  return out
+
+function XY(val x : real, val y : real) -> Vector:
+  Vector out
+  out.x = x
+  out.y = y
+  return out
+
+auto Y = XY(0, _)
+auto X = XY(_, 0)
+
+generator circle(val o : Vector, val r : real) -> Vector:
+  auto rr = r * r
+  function inside(val x : real, val y : real) -> bool:
+    return  dx * dx + dy * dy <= rr
+  for x = -r to r:
+    for y = -r to r:
+      if inside(x, y): 
+        yield o + XY(x, y)
+
+function main() -> void:
+  for v in circle(XY(0, 0), 5):
+    println("{" + real_str(v.x) + ", " + real_str(v.y) + "})
