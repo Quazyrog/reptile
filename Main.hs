@@ -13,6 +13,6 @@ main = do
   putStrLn (show (tk2, tkz2))
   let (tk3, tkz3) = Tokenizer.getIndent tkz2
   putStrLn (show (tk3, tkz3))
-  let (tk4, tkz4) = Tokenizer.getIdentifier tkz3
+  let (tk4, tkz4) = Tokenizer.getOperator tkz3
   putStrLn (show (tk4, tkz4))
   IO.hClose file

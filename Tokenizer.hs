@@ -1,13 +1,13 @@
 module Tokenizer where
 import System.IO
-import Data.Char (isAlphaNum)
+import Data.Char (isAlphaNum, isNumber, isAscii)
 
+-- TODO invalid token
 data Token = 
   Indent Int |
   EOL |
   LPar | 
   RPar | 
-  Keyword String |
   Identifier String |
   Operator String |
   LiteralI Integer |
@@ -60,6 +60,11 @@ rcExtend :: Char -> ReadingCont -> ReadingCont
 rcExtend c (RCEnd s) = RCEnd (c : s)
 rcExtend c (RCNext f) = RCNext (\x -> rcExtend c (f x))
 
+rcFromPred :: (Char -> Bool) -> ReadingCont
+rcFromPred pred = 
+  let cont c = if pred c then rcExtend c (RCNext cont) else RCEnd "" in
+  RCNext cont
+
 readToken :: Tokenizer -> ReadingCont -> (String, Tokenizer)
 readToken tokenizer start = 
   let
@@ -71,7 +76,7 @@ readToken tokenizer start =
         (c, tkz') = nextChar tkz 
         cont = nx c
         rd = read tkz' cont
-      in if discards cont then (rcUnwrap cont, tkz) else rd
+      in if discards cont then (rcUnwrap cont , tkz) else rd
   in read tokenizer start
 
 
@@ -93,28 +98,63 @@ getLPar = undefined
 getRPar  :: Tokenizer -> (Token, Tokenizer)
 getRPar = undefined
 
-getKeyword :: Tokenizer -> (Token, Tokenizer)
-getKeyword = undefined
-
 getIdentifier :: Tokenizer -> (Token, Tokenizer)
 getIdentifier tkz = 
   let
-    cont c = if isIdentifierChar c then rcExtend c (RCNext cont) else RCEnd ""
-    (token, tkz') = readToken tkz (RCNext cont)
+    (token, tkz') = readToken tkz (rcFromPred isIdentifierChar)
   in (Identifier token, tkz')
 
 getOperator :: Tokenizer -> (Token, Tokenizer)
-getOperator = undefined
+getOperator tkz = 
+  let 
+    (fstc, tkz') = nextChar tkz 
+    (op, tkz'') = 
+      if fstc == '`' then 
+        let (rd, tk) = readToken tkz' (rcFromPred (\c -> c /= '`')) in
+        (rd, snd (nextChar tk))
+      else readToken tkz' (rcFromPred isIdentifierChar)
+  in (Operator op, tkz'')
+  
 
 getLiteralI :: Tokenizer -> (Token, Tokenizer)
-getLiteralI = undefined
+getLiteralI tkz = 
+  let
+    isDigit c = isNumber c && isAscii c
+    (token, tkz') = readToken tkz (rcFromPred isDigit)
+  in (LiteralI (read token :: Integer), tkz')
 
 getLiteralB :: Tokenizer -> (Token, Tokenizer)
-getLiteralB = undefined
+getLiteralB tkz = 
+  let
+    (trueStr, trueTkz) = getExactly tkz "true"
+    (falseStr, falseTkz) = getExactly tkz "true"
+  in 
+  if trueStr == "true" then (LiteralB True, trueTkz) 
+  else (LiteralB False, falseTkz)
 
+-- FIXME exceptions; escape seq
 getLiteralS :: Tokenizer -> (Token, Tokenizer)
-getLiteralS = undefined
+getLiteralS tkz = 
+  let
+    contIni '"' = rcExtend '+' (RCNext cont)
+    contIni _ = RCEnd ""
+    cont '"' = RCEnd ""
+    cont c = rcExtend c (RCNext cont)
+    (rd, tkz') = readToken tkz (RCNext contIni)
+  in (LiteralS rd, tkz')
+
+getExactly :: Tokenizer -> String -> (String, Tokenizer)
+getExactly tkz expected = 
+  let
+    cont (e:es) c = if e == c then RCNext (cont es) else RCEnd ""
+    cont [] _ = RCEnd "+"
+    (rd, tkz') = readToken tkz (RCNext (cont expected))
+  in if rd == "" then ("", tkz) else (rd, tkz')
 
 
 isIdentifierChar :: Char -> Bool
-isIdentifierChar c = Data.Char.isAlphaNum c || c == '_'
+isIdentifierChar c = (Data.Char.isAlphaNum c && Data.Char.isAscii c) || c == '_'
+
+isOperatorChar :: Char -> Bool
+isOperatorChar c = elem c "!@%^&*<>=:"
+
