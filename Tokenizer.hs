@@ -1,6 +1,17 @@
 module Tokenizer where
 import System.IO
-import Data.Char (isAlphaNum, isNumber, isAscii)
+import Data.Char
+import Control.Exception
+
+
+data ParserException = ParseError String Int Int String
+instance Show ParserException where
+  show (ParseError file line column message) =
+    file ++ ":" ++ (show line) ++ ":" ++ (show column) ++ ":  " ++ message
+instance Exception ParserException
+raiseFrom :: Tokenizer -> String -> ParserException
+raiseFrom (Tokenizer _ fn l c) msg = ParseError fn l c msg
+
 
 -- TODO invalid token
 data Token = 
@@ -47,7 +58,15 @@ hasNextChar (Tokenizer _ _ _ _) = True
 nextChar :: Tokenizer -> (Char, Tokenizer)
 nextChar (Tokenizer ('\n':cs) fn l c) = ('\n', Tokenizer cs fn (l + 1) 1)
 nextChar (Tokenizer (ch:cs) fn l c) = (ch, Tokenizer cs fn l (c + 1))
-nextChar (Tokenizer [] _ _ _) = error "EOF"
+nextChar (Tokenizer [] fn l c) = throw (ParseError fn l c "Unexpected EOF")
+
+skipWhitespace :: Tokenizer -> Tokenizer
+skipWhitespace tkz = snd (readToken tkz (rcFromPred isSpace))
+
+matchChar :: Tokenizer -> Char -> String -> Tokenizer
+matchChar tkz c failMsg = 
+  let (c', tkz') = nextChar tkz in
+  if c == c' then tkz' else throw (raiseFrom tkz failMsg)
 
 
 data ReadingCont = RCNext (Char -> ReadingCont) | RCEnd String
@@ -90,19 +109,27 @@ getIndent tkz =
   in (Indent $ length indent, tkz')
 
 getEOL :: Tokenizer -> (Token, Tokenizer)
-getEOL = undefined
+getEOL tkz = 
+  let tkz' = matchChar (skipWhitespace tkz) '\n' "New line expected" in 
+  (EOL, tkz')
 
 getLPar :: Tokenizer -> (Token, Tokenizer)
-getLPar = undefined
+getLPar tkz =
+  let tkz' = matchChar (skipWhitespace tkz) '(' "'(' expected" in 
+  (LPar, tkz')
 
 getRPar  :: Tokenizer -> (Token, Tokenizer)
-getRPar = undefined
+getRPar tkz = 
+  let tkz' = matchChar (skipWhitespace tkz) ')' "')' expected" in 
+  (RPar, tkz')
 
 getIdentifier :: Tokenizer -> (Token, Tokenizer)
 getIdentifier tkz = 
   let
     (token, tkz') = readToken tkz (rcFromPred isIdentifierChar)
-  in (Identifier token, tkz')
+  in 
+  if token /= "" then (Identifier token, tkz') 
+  else throw (raiseFrom tkz "Identifier expected")
 
 getOperator :: Tokenizer -> (Token, Tokenizer)
 getOperator tkz = 
@@ -113,7 +140,9 @@ getOperator tkz =
         let (rd, tk) = readToken tkz' (rcFromPred (\c -> c /= '`')) in
         (rd, snd (nextChar tk))
       else readToken tkz' (rcFromPred isIdentifierChar)
-  in (Operator op, tkz'')
+  in
+  if op /= "" then (Operator op, tkz'')
+  else throw (raiseFrom tkz "Operator expected") 
   
 
 getLiteralI :: Tokenizer -> (Token, Tokenizer)
@@ -121,7 +150,9 @@ getLiteralI tkz =
   let
     isDigit c = isNumber c && isAscii c
     (token, tkz') = readToken tkz (rcFromPred isDigit)
-  in (LiteralI (read token :: Integer), tkz')
+  in 
+  if token /= "" then (LiteralI (read token :: Integer), tkz')
+  else throw (raiseFrom tkz "Integer literal expected") 
 
 getLiteralB :: Tokenizer -> (Token, Tokenizer)
 getLiteralB tkz = 
@@ -132,13 +163,13 @@ getLiteralB tkz =
   if trueStr == "true" then (LiteralB True, trueTkz) 
   else (LiteralB False, falseTkz)
 
--- FIXME exceptions; escape seq
+-- FIXME escape seq
 getLiteralS :: Tokenizer -> (Token, Tokenizer)
 getLiteralS tkz = 
   let
-    contIni '"' = rcExtend '+' (RCNext cont)
-    contIni _ = RCEnd ""
-    cont '"' = RCEnd ""
+    contIni '"' = RCNext cont
+    contIni _ = throw (raiseFrom tkz "String literal expected")
+    cont '"' = RCNext (\_ -> RCEnd "")
     cont c = rcExtend c (RCNext cont)
     (rd, tkz') = readToken tkz (RCNext contIni)
   in (LiteralS rd, tkz')
@@ -149,7 +180,9 @@ getExactly tkz expected =
     cont (e:es) c = if e == c then RCNext (cont es) else RCEnd ""
     cont [] _ = RCEnd "+"
     (rd, tkz') = readToken tkz (RCNext (cont expected))
-  in if rd == "" then ("", tkz) else (rd, tkz')
+  in 
+  if rd == "" then throw (raiseFrom tkz ("'" ++ expected ++ "' expected"))
+  else (rd, tkz')
 
 
 isIdentifierChar :: Char -> Bool
