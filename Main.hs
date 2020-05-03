@@ -1,18 +1,20 @@
 import qualified Tokenizer
 import qualified System.IO as IO
+import Tokenizer as Tkz
+import Parser
+import qualified Data.Map as Map
+import Control.Monad.State.Strict as State
+import Control.DeepSeq
 
-fileName = "examples/indent.txt"
+parseExpr "q\n" = do return ()
+parseExpr line = do
+  let tkz = Tkz.tokenizer line "(Unknown)"
+  let out = State.evalState (parseExpression minLevel) tkz
+  print line
+  putStrLn (dump out)
+  l <- getLine
+  parseExpr (l ++ "\n")
 
 main = do
-  file <- IO.openFile fileName IO.ReadMode
-  src <- IO.hGetContents file
-  tkz <- return $ Tokenizer.tokenizer src fileName
-  (tk, tkz) <- return $ Tokenizer.getIndent tkz
-  putStrLn (show (tk, tkz))
-  (tk, tkz) <- return $ Tokenizer.getLiteralS tkz
-  putStrLn (show (tk, tkz))
-  (tk, tkz) <- return $ Tokenizer.getIndent tkz
-  putStrLn (show (tk, tkz))
-  (tk, tkz) <- return $ Tokenizer.getOperator tkz
-  putStrLn (show (tk, tkz))
-  IO.hClose file
+  l <- getLine
+  parseExpr (l ++ "\n")

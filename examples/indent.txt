@@ -1,3 +1,3 @@
-    four_spaces_of_indent_please
+    "four_spaces_of_indent_please"
       `mod`
 `mod`
