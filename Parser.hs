@@ -10,13 +10,7 @@ import Debug.Trace (trace)
 import Control.DeepSeq
 
 
-data Operator = OP String deriving Show 
-instance Eq Operator where
-  (OP a) == (OP b) = a == b
-instance Ord Operator where
-  compare (OP a) (OP b) = compare a b
-instance NFData Operator where
-  rnf (OP s) = s `seq` ()
+type Operator = String
 data Associativity = ToRight | ToLeft | Unary deriving Show
 data Level = 
   OperatorLevel { 
@@ -29,13 +23,13 @@ data Level =
 operators :: Map.Map Int Level
 operators = Map.fromList $ (999, LiteralLevel) : (
   map (\l -> (levelPriotiry l, l)) [
-    OperatorLevel 0 ToRight (Set.fromList [OP "="]),
-    OperatorLevel 1 ToRight (Set.fromList [OP "&&", OP "||"]),
-    OperatorLevel 2 Unary   (Set.fromList [OP "!"]),
-    OperatorLevel 3 ToRight (Set.fromList [OP "<", OP "<=", OP ">", OP ">=", OP "=="]),
-    OperatorLevel 4 ToRight (Set.fromList [OP "+", OP "-"]),
-    OperatorLevel 5 ToRight (Set.fromList [OP "*", OP "/", OP "%"]),
-    OperatorLevel 6 Unary   (Set.fromList [OP "-"])])
+    OperatorLevel 0 ToRight (Set.fromList ["="]),
+    OperatorLevel 1 ToRight (Set.fromList ["&&", "||"]),
+    OperatorLevel 2 Unary   (Set.fromList ["!"]),
+    OperatorLevel 3 ToRight (Set.fromList ["<", "<=", ">", ">=", "=="]),
+    OperatorLevel 4 ToRight (Set.fromList ["+", "-"]),
+    OperatorLevel 5 ToRight (Set.fromList ["*", "/", "%"]),
+    OperatorLevel 6 Unary   (Set.fromList ["-"])])
 
 nextLevel :: Level -> Level
 nextLevel (OperatorLevel pri _ _) = 
@@ -46,16 +40,14 @@ minLevel :: Level
 minLevel = snd (Map.findMin operators)
 
 data Expression = 
-  UExpr Operator Expression |
-  BExpr Operator Expression Expression |
+  Call String [Expression] |
   Var String |
   ConstInt Integer |
   ConstStr String |
   ConstLog Bool
   deriving Show
 instance NFData Expression where
-  rnf (UExpr op e) = op `seq` (e `deepseq` ())
-  rnf (BExpr op e1 e2) = op `seq` (e1 `deepseq` (e2 `deepseq` ()))
+  rnf (Call fun args) = fun `seq` args `seq` ()
   rnf (Var s) = s `seq` ()
   rnf (ConstInt i) = i `seq` ()
   rnf (ConstStr s) = s `seq` ()
@@ -65,8 +57,8 @@ dump :: Expression -> String
 dump e =
   let 
     ind n = take (2 * n) (repeat ' ')
-    dd n (UExpr (OP o) e) = (ind n) ++ "UExpr " ++ o ++ "\n" ++ (dd (n+1) e)
-    dd n (BExpr (OP o) e1 e2) = (ind n) ++ "BExpr " ++ o ++ "\n" ++ (dd (n+1) e1) ++ (dd (n+1) e2)
+    dd n (Call fun args) = (ind n) ++ "Call " ++ fun ++ "\n" 
+        ++ foldr (++) "" (map (dd (n+1)) args)
     dd n (Var s) = (ind n) ++ "Var " ++ (show s) ++ "\n"
     dd n (ConstInt i) = (ind n) ++ "Const " ++ (show i) ++ "\n"
   in dd 0 e
@@ -77,7 +69,7 @@ instance NFData AST where
 
 --------------------------------------------------------------------------------
 unwrapOP :: Maybe Tkz.Token -> Operator
-unwrapOP (Just (Tkz.Operator opname)) = OP opname
+unwrapOP (Just (Tkz.Operator opname)) = opname
 
 parseArg :: State Tkz.Tokenizer Expression
 parseArg = do
@@ -120,7 +112,7 @@ parseExpression lvl@(OperatorLevel _ Unary ops) = do
   tkop <- Tkz.getOperator
   if isJust tkop && Set.member (unwrapOP tkop) ops then do
     arg <- parseExpression (nextLevel lvl)
-    return (UExpr (unwrapOP tkop) arg)
+    return (Call (unwrapOP tkop) [arg])
   else do 
     put tkz
     arg <- parseExpression (nextLevel lvl)
@@ -134,9 +126,10 @@ parseExpression lvl@(OperatorLevel _ ToRight ops) = do
   if isJust tkop && Set.member (unwrapOP tkop) ops then do
     modify Tkz.skipWhitespace
     arg2 <- parseExpression lvl
-    return (BExpr (unwrapOP tkop) arg1 arg2)
+    return (Call (unwrapOP tkop) [arg1, arg2])
   else do
     put tkz
     return arg1
 
-parseExpression (OperatorLevel _ ToLeft _) = undefined
+parseExpression (OperatorLevel _ ToLeft _) = 
+  error "Left associative operators unsupported yet"
