@@ -118,12 +118,12 @@ readToken tokenizer start =
 getIndent :: State Tokenizer Token
 getIndent =
   let
-    cont '\n' = RCNext cont
-    cont ' ' = rcExtend ' ' (RCNext cont)
-    cont _ = RCEnd ""
+    cont _ '\n' = RCNext (cont "")
+    cont acc ' ' = RCNext (cont (' ':acc))
+    cont acc _ = RCEnd acc
   in do 
   tkz <- get
-  let (indent, tkz') = readToken tkz (RCNext cont)
+  let (indent, tkz') = readToken tkz (RCNext (cont ""))
   put tkz'
   return (Indent (length indent))
 

@@ -3,7 +3,7 @@ def main() as void:
   if true:
     b = 1
     int a
-    if false:
+    if false: 
       foo()
     a = 1
   b = b + 1
