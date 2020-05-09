@@ -27,9 +27,10 @@ operators = Map.fromList $ (999, LiteralLevel) : (
     OperatorLevel 1 ToRight (Set.fromList ["&&", "||"]),
     OperatorLevel 2 Unary   (Set.fromList ["!"]),
     OperatorLevel 3 ToRight (Set.fromList ["<", "<=", ">", ">=", "=="]),
-    OperatorLevel 4 ToRight (Set.fromList ["+", "-"]),
+    OperatorLevel 4 ToLeft (Set.fromList ["+", "-"]), -- string concatenation
     OperatorLevel 5 ToRight (Set.fromList ["*", "/", "%"]),
-    OperatorLevel 6 Unary   (Set.fromList ["-"])])
+    OperatorLevel 6 Unary   (Set.fromList ["-"]),
+    OperatorLevel 7 ToRight  (Set.fromList ["**"])])
 
 nextLevel :: Level -> Level
 nextLevel (OperatorLevel pri _ _) = 
@@ -171,5 +172,22 @@ parseExpression lvl@(OperatorLevel _ ToRight ops) = do
     put tkz
     return arg1
 
-parseExpression (OperatorLevel _ ToLeft _) = 
-  error "Left associative operators unsupported yet"
+parseExpression lvl@(OperatorLevel _ ToLeft ops) = 
+  let 
+    parsemore lhs = do
+      s <- get
+      modify Tkz.skipWhitespace
+      tkop <- Tkz.getOperator
+      if isJust tkop && Set.member (unwrapOP tkop) ops then do
+        rhs <- parseExpression (nextLevel lvl)
+        let lhs' = Call (unwrapOP tkop) [lhs, rhs]
+        out <- parsemore lhs'
+        return out
+      else do
+        put s
+        return lhs
+  in do
+  modify Tkz.skipWhitespace
+  lhs <- parseExpression (nextLevel lvl)
+  out <- parsemore lhs
+  return out
