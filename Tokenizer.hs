@@ -53,6 +53,13 @@ instance Show Tokenizer where
 tokenizer :: String -> String -> Tokenizer
 tokenizer src fn = Tokenizer src fn 1 1
 
+atEOF :: Tokenizer -> Bool
+atEOF (Tokenizer src _ _ _) = 
+  let 
+    isBlank "" = True
+    isBlank (c:cs) = if Data.Char.isSpace c then isBlank cs else False
+  in isBlank src
+
 hasNextChar :: Tokenizer -> Bool
 hasNextChar (Tokenizer [] _ _ _) = False
 hasNextChar (Tokenizer _ _ _ _) = True
@@ -109,14 +116,17 @@ readToken tokenizer start =
   in read tokenizer start
 
 
-getIndent :: Tokenizer -> (Token, Tokenizer)
-getIndent tkz = 
+getIndent :: State Tokenizer Token
+getIndent =
   let
     cont '\n' = RCNext cont
     cont ' ' = rcExtend ' ' (RCNext cont)
     cont _ = RCEnd ""
-    (indent, tkz') = readToken tkz (RCNext cont)
-  in (Indent $ length indent, tkz')
+  in do 
+  tkz <- get
+  let (indent, tkz') = readToken tkz (RCNext cont)
+  put tkz'
+  return (Indent (length indent))
 
 getEOL :: State Tokenizer (Maybe Token)
 getEOL = do

@@ -1,8 +1,8 @@
 {-# LANGUAGE FlexibleContexts #-}
 module Parser where
 import qualified Tokenizer as Tkz
-import qualified Data.Map as Map
 import qualified Data.Set as Set
+import ExpressionsParser (parseExpression, Expression, minLevel)
 import Data.Maybe (isJust, isNothing, fromJust)
 import Control.Monad.State.Strict (State, get, put, modify)
 import Control.Exception (throw)
@@ -10,184 +10,98 @@ import Debug.Trace (trace)
 import Control.DeepSeq
 
 
-type Operator = String
-data Associativity = ToRight | ToLeft | Unary deriving Show
-data Level = 
-  OperatorLevel { 
-    levelPriotiry :: Int,
-    levelAssociativity :: Associativity,
-    levelOperators :: Set.Set Operator
-  } | 
-  LiteralLevel
+type Classifier = String -> Bool
 
-operators :: Map.Map Int Level
-operators = Map.fromList $ (999, LiteralLevel) : (
-  map (\l -> (levelPriotiry l, l)) [
-    OperatorLevel 0 ToRight (Set.fromList ["="]),
-    OperatorLevel 1 ToRight (Set.fromList ["&&", "||"]),
-    OperatorLevel 2 Unary   (Set.fromList ["!"]),
-    OperatorLevel 3 ToRight (Set.fromList ["<", "<=", ">", ">=", "=="]),
-    OperatorLevel 4 ToLeft (Set.fromList ["+", "-"]), -- string concatenation
-    OperatorLevel 5 ToRight (Set.fromList ["*", "/", "%"]),
-    OperatorLevel 6 Unary   (Set.fromList ["-"]),
-    OperatorLevel 7 ToRight  (Set.fromList ["**"])])
+typeNames :: Set.Set String
+typeNames = Set.fromList ["int", "str", "bool", "auto"]
 
-nextLevel :: Level -> Level
-nextLevel (OperatorLevel pri _ _) = 
-  let (_, greater) = Map.split pri operators in
-  snd (Map.findMin greater)
+classifyIdentifier :: Maybe Tkz.Token -> Classifier -> Bool
+classifyIdentifier Nothing _ = False
+classifyIdentifier (Just (Tkz.Identifier ident)) pred = pred ident
 
-minLevel :: Level
-minLevel = snd (Map.findMin operators)
+classifyDeclaration :: Classifier
+classifyDeclaration ident = Set.member ident typeNames
 
-data Expression = 
-  Call String [Expression] |
-  Var String |
-  ConstInt Integer |
-  ConstStr String |
-  ConstLog Bool
-  deriving Show
-instance NFData Expression where
-  rnf (Call fun args) = fun `seq` args `seq` ()
-  rnf (Var s) = s `seq` ()
-  rnf (ConstInt i) = i `seq` ()
-  rnf (ConstStr s) = s `seq` ()
-  rnf (ConstLog b) = b `seq` ()
 
-dump :: Expression -> String
-dump e =
-  let 
-    ind n = take (2 * n) (repeat ' ')
-    dd n (Call fun args) = (ind n) ++ "Call " ++ fun ++ "\n" 
-        ++ foldr (++) "" (map (dd (n+1)) args)
-    dd n (Var s) = (ind n) ++ "Var " ++ (show s) ++ "\n"
-    dd n (ConstInt i) = (ind n) ++ "Const " ++ (show i) ++ "\n"
-    dd n (ConstStr s) = (ind n) ++ "Const " ++ (show s) ++ "\n"
-    dd n (ConstLog b) = (ind n) ++ "Const " ++ (show b) ++ "\n"
-  in dd 0 e
-
-data AST = Compute Expression
+data AST = 
+  Compute Expression |
+  Declare String [String]
 instance NFData AST where
   rnf (Compute exp) = exp `deepseq` ()
+instance Show AST where
+  show ast = 
+    let
+      ind n = take (2 * n) (repeat ' ')
+      dd n (Compute e) = (ind n) ++ "Compute " ++ (show e)
+      dd n (Declare t vs) = "Declare " ++ t ++ " " ++ (show vs)
+    in dd 0 ast
 
---------------------------------------------------------------------------------
-unwrapOP :: Maybe Tkz.Token -> Operator
-unwrapOP (Just (Tkz.Operator opname)) = opname
+parseDeclaration :: State Tkz.Tokenizer AST
+parseDeclaration = 
+  let
+    parseVarNames = do
+      modify Tkz.skipWhitespace
+      nameToken <- Tkz.getIdentifier
+      if isJust nameToken then do
+        let (Tkz.Identifier name) = fromJust nameToken
+        modify Tkz.skipWhitespace
+        tkz <- get
+        let (continue, tkz') = Tkz.matchChar tkz ','
+        if continue then do
+          put tkz'
+          moreNames <- parseVarNames
+          return (name : moreNames)
+        else do
+          return [name]
+      else do
+        tkz <- get
+        throw (Tkz.raiseFrom "Expected variable identifier" tkz)
+  in do
+  typeToken <- Tkz.getIdentifier
+  if isJust typeToken then do
+    let (Tkz.Identifier typeName) = fromJust typeToken
+    names <- parseVarNames
+    return (Declare typeName names)
+  else do 
+    tkz <- get
+    throw (Tkz.raiseFrom "Expected type identifier" tkz)
 
-parseArgList :: State Tkz.Tokenizer [Expression]
-parseArgList = do
-  modify Tkz.skipWhitespace
-  s <- get
-  rpar <- Tkz.getRPar
-  if isJust rpar then do
-    put s
+parseComputation :: State Tkz.Tokenizer AST
+parseComputation = do
+  expr <- parseExpression minLevel
+  return (Compute expr)
+
+parseInstr :: State Tkz.Tokenizer AST
+parseInstr = do
+  tkz <- get
+  identifierToken <- Tkz.getIdentifier
+  put tkz
+  if classifyIdentifier identifierToken classifyDeclaration then do
+    instr <- parseDeclaration
+    return instr
+  else do
+    instr <- parseComputation
+    return instr
+
+parseBlock :: Int -> State Tkz.Tokenizer [AST]
+parseBlock depth = let indentWidth = 2 in do
+  tkz <- get
+  if Tkz.atEOF tkz then do
     return []
   else do
-    expr <- parseExpression minLevel
-    modify Tkz.skipWhitespace
-    tkz <- get
-    let (doNext, tkz') = Tkz.matchChar tkz ','
-    if doNext then do
-      put tkz'
-      rem <- parseArgList
-      return (expr : rem)
-    else do
-      return [expr]
-
-parseArg :: State Tkz.Tokenizer Expression
-parseArg = do
-  modify Tkz.skipWhitespace
-  literi <- Tkz.getLiteralI
-  liters <- Tkz.getLiteralS
-  literb <- Tkz.getLiteralB
-  if isJust literi then do
-    let (Just (Tkz.LiteralI val)) = literi
-    return (ConstInt val)
-  else if isJust liters then do
-    let (Just (Tkz.LiteralS val)) = liters
-    return (ConstStr val)
-  else if isJust literb then do
-    let (Just (Tkz.LiteralB val)) = literb
-    return (ConstLog val)
-  else do
-    ident <- Tkz.getIdentifier
-    if isNothing ident then do 
+    wtf <- Tkz.getIndent
+    let (Tkz.Indent w) = wtf
+    if w `mod` indentWidth /= 0 || w `div` indentWidth > depth then do
       tkz <- get
-      throw (Tkz.raiseFrom "Expected literal or identifier" tkz)
+      throw (Tkz.raiseFrom "Invalid indentation" tkz)
+    else if w `div` indentWidth < depth then do
+      return []
     else do
-      lpar <- Tkz.getLPar
-      if isNothing lpar then do
-        let (Just (Tkz.Identifier vname)) = ident
-        return (Var vname)
-      else do
-        args <- parseArgList
-        rpar <- Tkz.getRPar
-        if isNothing rpar then do
-          tkz <- get
-          throw (Tkz.raiseFrom "Expected enclosing parenthesis" tkz)
-        else do
-          let (Tkz.Identifier fn) = fromJust ident
-          return (trace (show (Call fn args)) (Call fn args))
-
-parseExpression :: Level -> State Tkz.Tokenizer Expression
-
-parseExpression LiteralLevel = do
-  tkz <- get
-  lpar <- Tkz.getLPar
-  if isJust lpar then do
-    arg <- parseExpression minLevel
-    rpar <- Tkz.getRPar
-    if isNothing rpar then do
-      tkz <- get
-      throw (Tkz.raiseFrom "Expected enclosing parenthesis" tkz)
-    else do
-      tkz' <- get
-      return arg
-  else do
-    arg <- parseArg
-    return arg
-
-parseExpression lvl@(OperatorLevel _ Unary ops) = do
-  tkz <- get
-  modify Tkz.skipWhitespace
-  tkop <- Tkz.getOperator
-  if isJust tkop && Set.member (unwrapOP tkop) ops then do
-    arg <- parseExpression (nextLevel lvl)
-    return (Call (unwrapOP tkop) [arg])
-  else do 
-    put tkz
-    arg <- parseExpression (nextLevel lvl)
-    return arg
-
-parseExpression lvl@(OperatorLevel _ ToRight ops) = do
-  arg1 <- parseExpression (nextLevel lvl)
-  tkz <- get
-  modify Tkz.skipWhitespace
-  tkop <- Tkz.getOperator
-  if isJust tkop && Set.member (unwrapOP tkop) ops then do
-    modify Tkz.skipWhitespace
-    arg2 <- parseExpression lvl
-    return (Call (unwrapOP tkop) [arg1, arg2])
-  else do
-    put tkz
-    return arg1
-
-parseExpression lvl@(OperatorLevel _ ToLeft ops) = 
-  let 
-    parsemore lhs = do
-      s <- get
-      modify Tkz.skipWhitespace
-      tkop <- Tkz.getOperator
-      if isJust tkop && Set.member (unwrapOP tkop) ops then do
-        rhs <- parseExpression (nextLevel lvl)
-        let lhs' = Call (unwrapOP tkop) [lhs, rhs]
-        out <- parsemore lhs'
-        return out
-      else do
-        put s
-        return lhs
-  in do
-  modify Tkz.skipWhitespace
-  lhs <- parseExpression (nextLevel lvl)
-  out <- parsemore lhs
-  return out
+      instr <- parseInstr
+      eol <- Tkz.getEOL
+      if isJust eol then do
+        moreInstr <- parseBlock depth
+        return (instr : moreInstr)
+      else do 
+        tkz <- get
+        throw (Tkz.raiseFrom "Expected end of line" tkz)

@@ -5,15 +5,14 @@ import Parser
 import qualified Data.Map as Map
 import Control.Monad.State.Strict as State
 import Control.DeepSeq
+import System.Environment (getArgs)
+import Data.List (intercalate)
 
-parseExpr "q\n" = do return ()
-parseExpr line = do
-  let tkz = Tkz.tokenizer line "(Unknown)"
-  let out = State.evalState (parseExpression minLevel) tkz
-  putStrLn (dump out)
-  l <- getLine
-  parseExpr (l ++ "\n")
-
-main = do
-  l <- getLine
-  parseExpr (l ++ "\n")
+main = do 
+  args <- getArgs
+  handle <- IO.openFile (args !! 0) IO.ReadMode  
+  contents <- IO.hGetContents handle  
+  let tkz = Tokenizer.tokenizer contents (args !! 0)
+  let blks = State.evalState (parseBlock 0) tkz
+  putStrLn (intercalate "\n" (map show blks))
+  IO.hClose handle  
