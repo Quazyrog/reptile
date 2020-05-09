@@ -70,6 +70,14 @@ matchChar tkz c =
   let (c', tkz') = nextChar tkz in
   if c == c' then (True, tkz') else (False, tkz)
 
+matchString :: Tokenizer -> String -> (Bool, Tokenizer)
+matchString tkz expected = 
+  let
+    cont (e:es) c = if e == c then RCNext (cont es) else RCEnd ""
+    cont [] _ = RCEnd "+"
+    (s, tkz') = readToken tkz (RCNext (cont expected))
+  in if s /= "" then (True, tkz') else (False, tkz)
+
 
 data ReadingCont = RCNext (Char -> ReadingCont) | RCEnd String
 
@@ -181,39 +189,40 @@ getLiteralI =
   else do
     return Nothing
 
-getLiteralB :: Tokenizer -> (Token, Tokenizer)
-getLiteralB tkz = 
-  let
-    (trueStr, trueTkz) = getExactly tkz "true"
-    (falseStr, falseTkz) = getExactly tkz "true"
-  in 
-  if trueStr == "true" then (LiteralB True, trueTkz) 
-  else (LiteralB False, falseTkz)
+getLiteralB :: State Tokenizer (Maybe Token)
+getLiteralB = do
+  tkz <- get
+  let (matchTrue, trueTkz) = matchString tkz "true"
+  let (matchFalse, falseTkz) = matchString tkz "false"
+  if matchTrue then do
+    put trueTkz
+    return (Just (LiteralB True))
+  else if matchFalse then do
+    put falseTkz
+    return (Just (LiteralB False))
+  else do
+    return Nothing
 
 -- FIXME escape seq
-getLiteralS :: Tokenizer -> (Token, Tokenizer)
-getLiteralS tkz = 
+getLiteralS :: State Tokenizer (Maybe Token)
+getLiteralS =
   let
-    contIni '"' = RCNext cont
-    contIni _ = throw (raiseFrom "String literal expected" tkz)
+    contIni '"' = rcExtend '+' (RCNext cont)
+    contIni _ = RCEnd ""
     cont '"' = RCNext (\_ -> RCEnd "")
     cont c = rcExtend c (RCNext cont)
-    (rd, tkz') = readToken tkz (RCNext contIni)
-  in (LiteralS rd, tkz')
-
-getExactly :: Tokenizer -> String -> (String, Tokenizer)
-getExactly tkz expected = 
-  let
-    cont (e:es) c = if e == c then RCNext (cont es) else RCEnd ""
-    cont [] _ = RCEnd "+"
-    (rd, tkz') = readToken tkz (RCNext (cont expected))
-  in 
-  if rd == "" then throw (raiseFrom ("'" ++ expected ++ "' expected") tkz)
-  else (rd, tkz')
+  in do 
+  tkz <- get
+  let (rd, tkz') = readToken tkz (RCNext contIni)
+  if rd /= "" then do
+    put tkz'
+    return (Just (LiteralS (tail rd)))
+  else
+    return Nothing
 
 
 isIdentifierChar :: Char -> Bool
 isIdentifierChar c = (Data.Char.isAlphaNum c && Data.Char.isAscii c) || c == '_'
 
 isOperatorChar :: Char -> Bool
-isOperatorChar c = elem c "!@%^&*<>=:-+/"
+isOperatorChar c = elem c "|!@%^&*<>=:-+/"

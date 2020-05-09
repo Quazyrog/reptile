@@ -10,7 +10,6 @@ parseExpr "q\n" = do return ()
 parseExpr line = do
   let tkz = Tkz.tokenizer line "(Unknown)"
   let out = State.evalState (parseExpression minLevel) tkz
-  print line
   putStrLn (dump out)
   l <- getLine
   parseExpr (l ++ "\n")
