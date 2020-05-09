@@ -1,0 +1,10 @@
+def main() as void:
+  int b
+  if true:
+    b = 1
+    int a
+    if false:
+      foo()
+    a = 1
+  b = b + 1
+  assert(b == 2)

@@ -6,7 +6,6 @@ import qualified Data.Set as Set
 import Data.Maybe (isJust, isNothing, fromJust)
 import Control.Monad.State.Strict (State, get, put, modify)
 import Control.Exception (throw)
-import Debug.Trace (trace)
 import Control.DeepSeq
 import Data.List (intercalate)
 
@@ -127,7 +126,7 @@ parseArg = do
           throw (Tkz.raiseFrom "Expected enclosing parenthesis" tkz)
         else do
           let (Tkz.Identifier fn) = fromJust ident
-          return (trace (show (Call fn args)) (Call fn args))
+          return (Call fn args)
 
 parseExpression :: Level -> State Tkz.Tokenizer Expression
 

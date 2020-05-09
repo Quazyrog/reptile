@@ -4,7 +4,6 @@ import System.IO
 import Data.Char
 import Control.Exception
 import Control.Monad.State.Strict (State, get, put)
-import Debug.Trace (trace)
 
 
 data ParserException = ParseError String Int Int String
@@ -230,9 +229,18 @@ getLiteralS =
   else
     return Nothing
 
+expect :: String -> State Tokenizer ()
+expect s = do
+  tkz <- get
+  let (matched, tkz') = matchString tkz s
+  if matched then do
+    put tkz'
+    return ()
+  else do
+    throw (raiseFrom ("Expected '" ++ s ++ "'") tkz)
 
 isIdentifierChar :: Char -> Bool
 isIdentifierChar c = (Data.Char.isAlphaNum c && Data.Char.isAscii c) || c == '_'
 
 isOperatorChar :: Char -> Bool
-isOperatorChar c = elem c "|!@%^&*<>=:-+/"
+isOperatorChar c = elem c "|!@%^&*<>=-+/"

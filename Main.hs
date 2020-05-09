@@ -13,6 +13,6 @@ main = do
   handle <- IO.openFile (args !! 0) IO.ReadMode  
   contents <- IO.hGetContents handle  
   let tkz = Tokenizer.tokenizer contents (args !! 0)
-  let blks = State.evalState (parseBlock 0) tkz
-  putStrLn (intercalate "\n" (map show blks))
+  let blk = State.evalState (parseBlock 0) tkz
+  putStrLn (show blk)
   IO.hClose handle  

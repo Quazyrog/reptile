@@ -6,11 +6,13 @@ import ExpressionsParser (parseExpression, Expression, minLevel)
 import Data.Maybe (isJust, isNothing, fromJust)
 import Control.Monad.State.Strict (State, get, put, modify)
 import Control.Exception (throw)
-import Debug.Trace (trace)
 import Control.DeepSeq
+import Data.List (intercalate)
 
 
 type Classifier = String -> Bool
+
+indentWidth = 2
 
 typeNames :: Set.Set String
 typeNames = Set.fromList ["int", "str", "bool", "auto"]
@@ -19,13 +21,27 @@ classifyIdentifier :: Maybe Tkz.Token -> Classifier -> Bool
 classifyIdentifier Nothing _ = False
 classifyIdentifier (Just (Tkz.Identifier ident)) pred = pred ident
 
-classifyDeclaration :: Classifier
-classifyDeclaration ident = Set.member ident typeNames
+isDeclaration :: Classifier
+isDeclaration ident = Set.member ident typeNames
 
+isIf :: Classifier
+isIf ident = ident == "if"
+
+isFun :: Classifier
+isFun ident = ident == "def"
+
+data Argument = 
+  ByVal String String |
+  ByRef String String |
+  ByConstVal String String
+  deriving Show
 
 data AST = 
+  DoAll [AST] |
+  Decide Expression AST |
   Compute Expression |
-  Declare String [String]
+  Declare String [String] |
+  DeclareFun String [Argument] String AST
 instance NFData AST where
   rnf (Compute exp) = exp `deepseq` ()
 instance Show AST where
@@ -33,8 +49,31 @@ instance Show AST where
     let
       ind n = take (2 * n) (repeat ' ')
       dd n (Compute e) = (ind n) ++ "Compute " ++ (show e)
-      dd n (Declare t vs) = "Declare " ++ t ++ " " ++ (show vs)
+      dd n (Declare t vs) = (ind n) ++ "Declare " ++ t ++ " " ++ (show vs)
+      dd n (Decide c i1) = 
+        (ind n) ++ "Decide " ++ (show c) ++ "\n" ++ (dd n i1) ++ "\n"
+      dd n (DoAll []) = (ind (n + 1)) ++ "Noop"
+      dd n (DoAll is) = (intercalate "\n" (map (dd (n + 1)) is))
+      dd n (DeclareFun fn args t blk) =
+        (ind n) ++ "Function " ++ fn ++ ": " ++ (show args) 
+          ++ " -> " ++ t ++ "\n" ++ (dd n blk)
     in dd 0 ast
+
+assureEOL :: State Tkz.Tokenizer ()
+assureEOL = do
+  tkz <- get
+  eol <- Tkz.getEOL
+  put tkz
+  if isJust eol then return () else throw (Tkz.raiseFrom "End of line expected" tkz)
+
+required :: State Tkz.Tokenizer (Maybe Tkz.Token) -> State Tkz.Tokenizer Tkz.Token
+required getter = do
+  tk <- getter
+  if isJust tk then do
+    return (fromJust tk)
+  else do
+    tkz <- get
+    throw (Tkz.raiseFrom "Required token not found" tkz)
 
 parseDeclaration :: State Tkz.Tokenizer AST
 parseDeclaration = 
@@ -71,37 +110,115 @@ parseComputation = do
   expr <- parseExpression minLevel
   return (Compute expr)
 
-parseInstr :: State Tkz.Tokenizer AST
-parseInstr = do
+parseIf :: Int -> State Tkz.Tokenizer AST
+parseIf depth = do
+  Tkz.expect "if"
+  modify Tkz.skipWhitespace
+  expr <- parseExpression minLevel
+  modify Tkz.skipWhitespace
+  Tkz.expect ":"
+  thenBlock <- parseBlock (depth + 1)
+  return (Decide expr thenBlock)
+
+parseFun :: Int -> State Tkz.Tokenizer AST
+parseFun depth = 
+  let 
+    isMode (Just (Tkz.Identifier "val")) = True
+    isMode (Just (Tkz.Identifier "const")) = True
+    isMode (Just (Tkz.Identifier "ref")) = True
+    isMode _ = False
+    mkArg (Just (Tkz.Identifier "val")) (Tkz.Identifier n) (Tkz.Identifier t) =
+       ByVal n t
+    mkArg (Just (Tkz.Identifier "const")) (Tkz.Identifier n) (Tkz.Identifier t) =
+      ByConstVal n t
+    mkArg (Just (Tkz.Identifier "ref")) (Tkz.Identifier n) (Tkz.Identifier t) =
+      ByRef n t
+    parseArgList = do
+      tkz <- get
+      modify Tkz.skipWhitespace
+      mode <- Tkz.getIdentifier
+      if isMode mode then do
+        modify Tkz.skipWhitespace
+        argname <- required Tkz.getIdentifier
+        modify Tkz.skipWhitespace
+        Tkz.expect "as"
+        modify Tkz.skipWhitespace
+        argtype <- required Tkz.getIdentifier
+        modify Tkz.skipWhitespace
+        tkz' <- get
+        let (next, tkz'') = Tkz.matchChar tkz' ','
+        if next then do
+          put tkz''
+          more <- parseArgList
+          return ((mkArg mode argname argtype) : more)
+        else do
+          return [mkArg mode argname argtype]
+      else do
+        put tkz
+        return []
+    mkFun (Tkz.Identifier n) (Tkz.Identifier t) args blk = 
+      DeclareFun n args t blk
+  in do
+  Tkz.expect "def"
+  modify Tkz.skipWhitespace
+  fname <- required Tkz.getIdentifier
+  modify Tkz.skipWhitespace
+  required Tkz.getLPar
+  args <- parseArgList
+  modify Tkz.skipWhitespace
+  required Tkz.getRPar
+  modify Tkz.skipWhitespace
+  Tkz.expect "as"
+  modify Tkz.skipWhitespace
+  tname <- required Tkz.getIdentifier
+  modify Tkz.skipWhitespace
+  Tkz.expect ":"
+  blk <- parseBlock (depth + 1)
+  return (mkFun fname tname args blk)
+  
+parseInstr :: Int -> State Tkz.Tokenizer AST
+parseInstr depth = do
   tkz <- get
   identifierToken <- Tkz.getIdentifier
+  let classify = classifyIdentifier identifierToken
   put tkz
-  if classifyIdentifier identifierToken classifyDeclaration then do
+  if classify isDeclaration then do
     instr <- parseDeclaration
+    assureEOL
+    return instr
+  else if classify isIf then do
+    instr <- parseIf depth
+    assureEOL
+    return instr
+  else if classify isFun then do
+    instr <- parseFun depth
+    assureEOL
     return instr
   else do
-    instr <- parseComputation
+    instr <- parseComputation 
+    assureEOL
     return instr
 
-parseBlock :: Int -> State Tkz.Tokenizer [AST]
-parseBlock depth = let indentWidth = 2 in do
-  tkz <- get
-  if Tkz.atEOF tkz then do
-    return []
-  else do
-    wtf <- Tkz.getIndent
-    let (Tkz.Indent w) = wtf
-    if w `mod` indentWidth /= 0 || w `div` indentWidth > depth then do
+parseBlock :: Int -> State Tkz.Tokenizer AST
+parseBlock depth = 
+  let 
+    parseInstrs depth = do
       tkz <- get
-      throw (Tkz.raiseFrom "Invalid indentation" tkz)
-    else if w `div` indentWidth < depth then do
-      return []
-    else do
-      instr <- parseInstr
-      eol <- Tkz.getEOL
-      if isJust eol then do
-        moreInstr <- parseBlock depth
-        return (instr : moreInstr)
-      else do 
-        tkz <- get
-        throw (Tkz.raiseFrom "Expected end of line" tkz)
+      if Tkz.atEOF tkz then do
+        return []
+      else do
+        wtf <- Tkz.getIndent
+        let (Tkz.Indent w) = wtf
+        if w `mod` indentWidth /= 0 || w `div` indentWidth > depth then do
+          tkz <- get
+          throw (Tkz.raiseFrom "Invalid indentation" tkz)
+        else if w `div` indentWidth < depth then do
+          put tkz
+          return []
+        else do
+          instr <- parseInstr depth
+          moreInstr <- parseInstrs depth
+          return (instr : moreInstr)
+  in do
+  instrs <- parseInstrs depth
+  return (DoAll instrs)
