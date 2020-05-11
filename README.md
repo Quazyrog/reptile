@@ -8,7 +8,7 @@ Poza tym jest w repozytorium trochę kodu, który docelowo ma być odpowiedzialn
 za uruchamianie funkcji, ale ta część jest raczej jeszcze w powijakach.
 
 | Plik Źródłowy |                             Opis                             |
-|===============|==============================================================|
+| :------------ | :----------------------------------------------------------- |
 |`Tokenizer.hs`|Zapewnia trochę abstrakcji jeżeli chodzi o czytanie danych z pliku|
 |`ExpressionParser.hs`|Funkcje związane z parsowaniem wyrażeń do obliczenia|
 |`Parser.hs`|Używa Tokenizera i parsera wyrażeń do zbudowania drzewa składni z kodu pliku|
