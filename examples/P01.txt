@@ -1,10 +1,13 @@
 def main() as void:
+  def foo(val x as int) as void:
+    int y
+    y = 2 * x + 1
   int b
   if true:
     b = 1
     int a
     if false: 
-      foo()
+      foo(11)
     a = 1
   b = b + 1
   assert(b == 2)

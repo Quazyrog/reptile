@@ -51,7 +51,7 @@ instance Show AST where
       dd n (Compute e) = (ind n) ++ "Compute " ++ (show e)
       dd n (Declare t vs) = (ind n) ++ "Declare " ++ t ++ " " ++ (show vs)
       dd n (Decide c i1) = 
-        (ind n) ++ "Decide " ++ (show c) ++ "\n" ++ (dd n i1) ++ "\n"
+        (ind n) ++ "Decide " ++ (show c) ++ "\n" ++ (dd n i1)
       dd n (DoAll []) = (ind (n + 1)) ++ "Noop"
       dd n (DoAll is) = (intercalate "\n" (map (dd (n + 1)) is))
       dd n (DeclareFun fn args t blk) =
