@@ -13,7 +13,7 @@ data ProgramState = PS {
 
 ------------------------------------ MEMORY ------------------------------------
 data VType = IntegerType | BoolType | StringType
-data VData = VInt Int | VBool Bool | VStr String
+data VData = VInt Integer | VBool Bool | VStr String deriving Show
 instance NFData VData where
   rnf (VInt v) = v `seq` ()
   rnf (VBool v) = v `seq` ()
@@ -29,6 +29,16 @@ find memory id =
     fromJust store
   else 
     error "Dereference deleted variable"
+
+getVar :: Frame -> String -> InterpIO VData
+getVar frame vname = do
+  s <- MS.get
+  let ref = Map.lookup vname frame
+  if isJust ref then do
+    let (Var _ d) = find (stateMemory s) (fromJust ref)
+    return d
+  else do
+    error "[BUG] No entry in frame"
 
 updateMemory :: (Memory -> Memory) -> InterpIO ()
 updateMemory modify = do
@@ -67,7 +77,7 @@ updateRef id operation = do
 ---------------------------------- FUNCTIONS -----------------------------------
 data ArgPassType = PassRef | PassVal
 data Arg = Value VData | Reference Integer
-type RFIArg = (String, ArgPassType)
+type RFIArg = (String, ArgPassType, VType)
 type FunctionBody = Frame -> ByteCode
 data RuntimeFunctionInfo = RFI {
   fName :: String,
@@ -79,23 +89,23 @@ data RuntimeFunctionInfo = RFI {
   fBody :: FunctionBody
 }
 
-type ByteCode = InterpIO VData
+type ByteCode = InterpIO (Maybe VData)
 
 updateFrame :: Frame -> [RFIArg] -> [Arg] -> InterpIO Frame
 updateFrame f [] [] = do return f
-updateFrame f ((name, PassRef):ais) ((Reference id):as) = do
+updateFrame f ((name, PassRef, _):ais) ((Reference id):as) = do
   incRef id
   let f' = Map.insert name id f
   f'' <- updateFrame f' ais as
   return f''
-updateFrame f ((name, PassVal):ais) ((Value val):as) = do
+updateFrame f ((name, PassVal, t):ais) ((Value val):as) = do
   id <- putRef val
-  f' <- updateFrame f ((name, PassRef):ais) ((Reference id):as)
+  f' <- updateFrame f ((name, PassRef, t):ais) ((Reference id):as)
   return f'
 
 shutdownFrame :: Frame -> [RFIArg] -> InterpIO ()
 shutdownFrame f [] = do return ()
-shutdownFrame f ((name, _):ais) = do
+shutdownFrame f ((name, _, _):ais) = do
   let id = fromJust (Map.lookup name f)
   decRef id
   shutdownFrame f ais
@@ -127,3 +137,14 @@ instantiateFunction rfi parentFrame =
   newFrame <- referVars Map.empty (fFreeVariables rfi)
   res <- applyArgs (fBody rfi) newFrame (fArgsTypes rfi)
   return res
+
+argRepr :: [RFIArg] -> String
+argRepr [] = ""
+argRepr ((_, pass, t):args) = 
+  let 
+    pStr PassRef = "&"
+    pStr PassVal = "="
+    tStr IntegerType = "i"
+    tStr BoolType = "b"
+    tStr StringType = "s"
+  in "(" ++ (pStr pass) ++ (tStr t) ++ ")" ++ (argRepr args)

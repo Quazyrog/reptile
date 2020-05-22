@@ -7,7 +7,7 @@ import System.Environment (getArgs)
 import Data.List (intercalate)
 import Tokenizer as Tkz
 import Parser
-import qualified Intermediate
+import qualified Compilatron 
 
 main = do 
   args <- getArgs
@@ -16,4 +16,7 @@ main = do
   let tkz = Tokenizer.tokenizer contents (args !! 0)
   let blk = State.evalState (parseBlock 0) tkz
   putStrLn (show blk)
+  let program = (Compilatron.compileInstr blk) Map.empty
+  result <- State.evalStateT program Compilatron.initialState
+  putStrLn ("\nResult: " ++ (show result))
   IO.hClose handle  
