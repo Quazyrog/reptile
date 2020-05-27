@@ -1,21 +1,45 @@
 module Compilatron where
 import qualified Data.Map as Map
-import Data.Maybe (isJust)
+import Data.Maybe (isJust, fromJust)
 import Intermediate
 import Parser
-import ExpressionsParser
+import ExpressionsParser as EP
 import Debug.Trace
 import Control.DeepSeq
+import qualified Stdlib
+import qualified Control.Monad.State.Strict as MS
 
 initialState :: ProgramState
 initialState = PS {
   stateMemory = Map.empty,
-  stateGlobalFrame = Map.empty}
+  stateGlobalFrame = Map.empty,
+  stateMemoryCounter = 1,
+  stateFunctionScope = Stdlib.stdlib }
 
 compileExpr :: Expression -> FunctionBody
 compileExpr (ConstInt v) = \_ -> do return (Just (VInt v))
 compileExpr (ConstStr v) = \_ -> do return (Just (VStr v))
 compileExpr (ConstLog v) = \_ -> do return (Just (VBool v))
+compileExpr (EP.Var vname) = \frame -> do
+  vdata <- getVar frame vname
+  return (vdata `deepseq` (Just vdata))
+compileExpr (Call fname args) = 
+  let 
+    compiledArgs = \frame -> do
+      cargs <- mapM (\arg -> compileExpr arg frame) args
+      return (map (Value . fromJust) cargs)
+  in \frame -> do
+    vargs <- compiledArgs frame
+    functions <- args `deepseq` MS.gets stateFunctionScope
+    let funRFI = Map.lookup fname functions
+    if isJust funRFI then do
+      let funRFI' = fromJust funRFI
+      let fun = instantiateFunction funRFI' frame
+      bytecode <- fun
+      retval <- bytecode vargs 
+      return retval
+    else do
+      error ("[BUG] Called undefined function " ++ fname)
 
 
 compileInstr :: AST -> FunctionBody

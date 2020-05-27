@@ -31,4 +31,4 @@ intAdd frame = do
   s <- MS.get
   (VInt a) <- getVar frame "lhs"
   (VInt b) <- getVar frame "rhs"
-  return (VInt (a + b))
+  return (Just (VInt (a + b)))

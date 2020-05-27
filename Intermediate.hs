@@ -8,7 +8,9 @@ import Control.DeepSeq
 type InterpIO = MS.StateT ProgramState IO
 data ProgramState = PS {
   stateMemory :: Memory,
-  stateGlobalFrame :: Frame
+  stateGlobalFrame :: Frame,
+  stateMemoryCounter :: Integer,
+  stateFunctionScope :: Map.Map String RuntimeFunctionInfo
 }
 
 ------------------------------------ MEMORY ------------------------------------
@@ -47,7 +49,14 @@ updateMemory modify = do
   return ()
 
 putRef :: VData -> InterpIO Integer
-putRef = undefined
+putRef var = do
+  ps <- MS.get
+  let ref = stateMemoryCounter ps
+  let mem = (Var 1 var)
+  MS.put ps { 
+    stateMemory = (Map.insert ref mem (stateMemory ps)),
+    stateMemoryCounter = ref + 1 }
+  return ref
 
 incRef :: Integer -> InterpIO ()
 incRef id = do
@@ -139,6 +148,7 @@ instantiateFunction rfi parentFrame =
   return res
 
 argRepr :: [RFIArg] -> String
+argRepr _ = "" -- FIXME temporarily for texting
 argRepr [] = ""
 argRepr ((_, pass, t):args) = 
   let 
