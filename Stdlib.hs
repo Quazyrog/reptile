@@ -27,8 +27,8 @@ intOp name body =
   (name, wrapStdlib name args IntegerType body)
 
 intAdd :: FunctionBody
-intAdd frame = do
-  s <- MS.get
+intAdd = do
+  frame <- MS.gets stateTopFrame
   (VInt a) <- getVar frame "lhs"
   (VInt b) <- getVar frame "rhs"
   return (Just (VInt (a + b)))

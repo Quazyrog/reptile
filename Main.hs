@@ -16,7 +16,7 @@ main = do
   let tkz = Tokenizer.tokenizer contents (args !! 0)
   let blk = State.evalState (parseBlock 0) tkz
   putStrLn (show blk)
-  let program = (Compilatron.compileInstr blk) Map.empty
+  let program = Compilatron.compileInstr blk
   result <- State.evalStateT program Compilatron.initialState
   putStrLn ("\nResult: " ++ (show result))
   IO.hClose handle  

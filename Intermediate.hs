@@ -4,11 +4,12 @@ import qualified Data.Set as Set
 import Data.Maybe (isJust, fromJust, isNothing)
 import qualified Control.Monad.State.Strict as MS
 import Control.DeepSeq
+import Debug.Trace
 
 type InterpIO = MS.StateT ProgramState IO
 data ProgramState = PS {
   stateMemory :: Memory,
-  stateGlobalFrame :: Frame,
+  stateTopFrame :: Frame,
   stateMemoryCounter :: Integer,
   stateFunctionScope :: Map.Map String RuntimeFunctionInfo
 }
@@ -30,7 +31,7 @@ find memory id =
   if isJust store then 
     fromJust store
   else 
-    error "Dereference deleted variable"
+    error "[BUG] Dereference deleted variable"
 
 getVar :: Frame -> String -> InterpIO VData
 getVar frame vname = do
@@ -87,7 +88,7 @@ updateRef id operation = do
 data ArgPassType = PassRef | PassVal
 data Arg = Value VData | Reference Integer
 type RFIArg = (String, ArgPassType, VType)
-type FunctionBody = Frame -> ByteCode
+type FunctionBody = ByteCode
 data RuntimeFunctionInfo = RFI {
   fName :: String,
   fBoundVariables :: [String],
@@ -112,39 +113,37 @@ updateFrame f ((name, PassVal, t):ais) ((Value val):as) = do
   f' <- updateFrame f ((name, PassRef, t):ais) ((Reference id):as)
   return f'
 
-shutdownFrame :: Frame -> [RFIArg] -> InterpIO ()
-shutdownFrame f [] = do return ()
-shutdownFrame f ((name, _, _):ais) = do
-  let id = fromJust (Map.lookup name f)
-  decRef id
-  shutdownFrame f ais
+shutdownFrame :: Frame -> InterpIO ()
+shutdownFrame f = do
+  mapM decRef (Map.elems f)
   return ()
 
 applyArgs :: FunctionBody -> Frame -> [RFIArg] -> InterpIO ([Arg] -> ByteCode)
 applyArgs body closure argInfo = 
   return (\args -> do
-    frame <- updateFrame closure argInfo args
-    retval <- frame `deepseq` (body frame)
-    retval `deepseq` (shutdownFrame frame argInfo)
+    f <- updateFrame closure argInfo args
+    ps <- MS.get
+    MS.put (f `deepseq` (ps { stateTopFrame = f }))
+    retval <- body
+    retval `deepseq` (shutdownFrame f)
+    MS.modify (\s -> s { stateTopFrame = closure })
     return retval)
 
-instantiateFunction :: RuntimeFunctionInfo -> Frame -> InterpIO ([Arg] -> ByteCode)
-instantiateFunction rfi parentFrame =
-  let
-    referVars initFrame (v:vs) = do
-      let refMaybe = Map.lookup v parentFrame
-      if isJust refMaybe then do
-        let ref = fromJust refMaybe
-        incRef ref
-        frame <- (referVars (Map.insert v ref initFrame) vs)
-        return frame
-      else do
-        error "[BUG] instantiateFunction: free variable dereference failed"
-    referVars initFrame [] = do return initFrame
+instantiateFunction :: RuntimeFunctionInfo -> InterpIO ([Arg] -> ByteCode)
+instantiateFunction rfi = 
+  let 
+    xd f vn = do
+      let id = Map.lookup vn f
+      if isJust id then do 
+        incRef (fromJust id)
+        return (vn, fromJust id)
+      else 
+        error "[BUG] cannot dereference free variable"
   in do
-  state <- MS.get
-  newFrame <- referVars Map.empty (fFreeVariables rfi)
-  res <- applyArgs (fBody rfi) newFrame (fArgsTypes rfi)
+  ps <- MS.get
+  let closure = stateTopFrame ps
+  freev <- mapM (xd closure) (fFreeVariables rfi)
+  res <- applyArgs (fBody rfi) (Map.fromList freev) (fArgsTypes rfi)
   return res
 
 argRepr :: [RFIArg] -> String

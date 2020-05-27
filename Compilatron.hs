@@ -12,29 +12,31 @@ import qualified Control.Monad.State.Strict as MS
 initialState :: ProgramState
 initialState = PS {
   stateMemory = Map.empty,
-  stateGlobalFrame = Map.empty,
+  stateTopFrame = Map.empty,
   stateMemoryCounter = 1,
   stateFunctionScope = Stdlib.stdlib }
 
 compileExpr :: Expression -> FunctionBody
-compileExpr (ConstInt v) = \_ -> do return (Just (VInt v))
-compileExpr (ConstStr v) = \_ -> do return (Just (VStr v))
-compileExpr (ConstLog v) = \_ -> do return (Just (VBool v))
-compileExpr (EP.Var vname) = \frame -> do
+compileExpr (ConstInt v) = do return (Just (VInt v))
+compileExpr (ConstStr v) = do return (Just (VStr v))
+compileExpr (ConstLog v) = do return (Just (VBool v))
+compileExpr (EP.Var vname) = do
+  frame <- MS.gets stateTopFrame
   vdata <- getVar frame vname
   return (vdata `deepseq` (Just vdata))
 compileExpr (Call fname args) = 
   let 
-    compiledArgs = \frame -> do
-      cargs <- mapM (\arg -> compileExpr arg frame) args
+    compiledArgs = do
+      cargs <- mapM (\arg -> compileExpr arg) args
       return (map (Value . fromJust) cargs)
-  in \frame -> do
-    vargs <- compiledArgs frame
+  in do
+    frame <- MS.gets stateTopFrame
+    vargs <- compiledArgs
     functions <- args `deepseq` MS.gets stateFunctionScope
     let funRFI = Map.lookup fname functions
     if isJust funRFI then do
       let funRFI' = fromJust funRFI
-      let fun = instantiateFunction funRFI' frame
+      let fun = instantiateFunction funRFI'
       bytecode <- fun
       retval <- bytecode vargs 
       return retval
@@ -47,14 +49,16 @@ compileInstr (DoAll is) =
   let 
     instrs = map compileInstr is
   in composeInstr instrs
-compileInstr (Compute expr) = \f -> compileExpr expr f
-compileInstr a = \_ -> undefined
+compileInstr (Compute expr) = compileExpr expr
+compileInstr (Declare "int" names) = error "todo"
+compileInstr a = undefined
 
 
 composeInstr :: [FunctionBody] -> FunctionBody
-composeInstr [] = \f -> do return Nothing
+composeInstr [] = do return Nothing
 composeInstr (e:es) = 
-  let rest = composeInstr es in \f -> do
-    r1 <- e f
-    r2 <- r1 `deepseq` (rest f)
+  let rest = composeInstr es in do
+    f <- MS.gets stateTopFrame
+    r1 <- e
+    r2 <- r1 `deepseq` rest
     if isJust r2 then do return r2 else do return r1
