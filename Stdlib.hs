@@ -25,7 +25,9 @@ intOps = [
   ("=", wrapStdlib "=" 
     [("lhs", PassRef, IntegerType), ("rhs", PassVal, IntegerType)] 
     IntegerType intAssign),
-  intOp "+" intAdd]
+  intOp "+" (+), intOp "-" (-), 
+  intOp "*" (*), intOp "/" div, intOp "%" mod,
+  intOp "**" (^)]
 
 intAssign :: FunctionBody
 intAssign = do
@@ -34,14 +36,14 @@ intAssign = do
   updateVar "lhs" (\_ -> v)
   return (Just v)
 
-intOp :: String -> FunctionBody -> (String, RuntimeFunctionInfo)
-intOp name body = 
-  let args = [("lhs", PassVal, IntegerType), ("rhs", PassVal, IntegerType)] in
+intOp :: String -> (Integer -> Integer -> Integer) -> (String, RuntimeFunctionInfo)
+intOp name op = 
+  let 
+    args = [("lhs", PassVal, IntegerType), ("rhs", PassVal, IntegerType)] 
+    body = do
+      frame <- MS.gets stateTopFrame
+      (VInt lhs) <- getVar frame "lhs"
+      (VInt rhs) <- getVar frame "rhs"
+      return (Just (VInt (op lhs rhs)))
+  in
   (name, wrapStdlib name args IntegerType body)
-
-intAdd :: FunctionBody
-intAdd = do
-  frame <- MS.gets stateTopFrame
-  (VInt a) <- getVar frame "lhs"
-  (VInt b) <- getVar frame "rhs"
-  return (Just (VInt (a + b)))

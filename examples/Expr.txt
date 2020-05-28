@@ -5,3 +5,8 @@ a = 5
 b = a + b
 a = a + b
 a
+
+int x, y, z
+x = 8 ** 2
+y = (8 + 8) / 4
+z = a * x * y / 2
