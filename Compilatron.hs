@@ -25,25 +25,33 @@ compileExpr (EP.Var vname) = do
   frame <- MS.gets stateTopFrame
   vdata <- getVar frame vname
   return (vdata `deepseq` (Just vdata))
-compileExpr (Call fname args) = 
-  let 
-    compiledArgs = do
-      cargs <- mapM (\arg -> compileExpr arg) args
-      return (map (Value . fromJust) cargs)
-  in do
-    frame <- MS.gets stateTopFrame
-    vargs <- compiledArgs
-    functions <- args `deepseq` MS.gets stateFunctionScope
-    let funRFI = Map.lookup fname functions
-    if isJust funRFI then do
-      let funRFI' = fromJust funRFI
-      let fun = instantiateFunction funRFI'
-      bytecode <- fun
-      retval <- bytecode vargs 
-      return retval
-    else do
-      error ("[BUG] Called undefined function " ++ fname)
+compileExpr (Call fname args) = do
+  frame <- MS.gets stateTopFrame
+  functions <- args `deepseq` MS.gets stateFunctionScope
+  let funRFI = Map.lookup fname functions
+  if isJust funRFI then do
+    let funRFI' = fromJust funRFI
+    let fun = instantiateFunction funRFI'
+    vargs <- compileArgs (fArgsTypes funRFI') args -- todo seq
+    bytecode <- fun
+    retval <- bytecode vargs 
+    return retval
+  else do
+    error ("[BUG] Called undefined function " ++ fname)
 
+
+compileArgs :: [RFIArg] -> [Expression] -> InterpIO [Arg]
+compileArgs [] [] = do return []
+compileArgs ((_, PassVal, _):rfis) (arg:args) = do
+  let carg = compileExpr arg
+  (Just varg) <- carg
+  rest <- compileArgs rfis args
+  return ((Value varg) : rest)
+compileArgs ((_, PassRef, _):rfis) ((EP.Var vname):args) = do
+  f <- MS.gets stateTopFrame
+  let (Just id) = Map.lookup vname f
+  rest <- compileArgs rfis args
+  return ((Reference id) : rest)
 
 compileInstr :: AST -> FunctionBody
 compileInstr (DoAll is) = 

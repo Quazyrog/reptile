@@ -1,5 +1,7 @@
 2 + 2 + 6
-int a, b
-b + a
-int c
-c
+int a, b  
+b + b
+a = 5
+b = a + b
+a = a + b
+a

@@ -41,7 +41,7 @@ getVar frame vname = do
     let (Var _ d) = find (stateMemory s) (fromJust ref)
     return d
   else do
-    error "[BUG] No entry in frame"
+    error ("[BUG] No entry in frame: " ++ (show frame))
 
 updateMemory :: (Memory -> Memory) -> InterpIO ()
 updateMemory modify = do
@@ -77,12 +77,18 @@ decRef id = do
     updateMemory (\m -> Map.delete id m)
     return ()
   
-updateRef :: Integer -> (VData -> VData) -> InterpIO ()
-updateRef id operation = do
-  state <- MS.get
-  let (Var refc val) = find (stateMemory state) id
-  updateMemory (\m -> Map.insert id (Var (refc + 1) (operation val)) m)
-  return ()
+updateVar :: String -> (VData -> VData) -> InterpIO ()
+updateVar vname operation = do
+  ps <- MS.get
+  let id = Map.lookup vname (stateTopFrame ps)
+  if isJust id then do
+    let jid = fromJust id
+    let (Var refc val) = find (stateMemory ps) jid
+    updateMemory (\m -> Map.insert jid (Var (refc + 1) (operation val)) m)
+    return ()
+  else do 
+    error ("[BUG] Dereference undeclared variable " ++ vname)
+
 
 ---------------------------------- FUNCTIONS -----------------------------------
 data ArgPassType = PassRef | PassVal
@@ -118,8 +124,8 @@ shutdownFrame f = do
   mapM decRef (Map.elems f)
   return ()
 
-applyArgs :: FunctionBody -> Frame -> [RFIArg] -> InterpIO ([Arg] -> ByteCode)
-applyArgs body closure argInfo = 
+applyArgs :: FunctionBody -> Frame -> Frame -> [RFIArg] -> InterpIO ([Arg] -> ByteCode)
+applyArgs body parentFrame closure argInfo = 
   return (\args -> do
     f <- updateFrame closure argInfo args
     ps <- MS.get
@@ -127,7 +133,7 @@ applyArgs body closure argInfo =
     retval <- body
     f' <- retval `deepseq` (MS.gets stateTopFrame)
     shutdownFrame f'
-    MS.modify (\s -> s { stateTopFrame = closure })
+    MS.modify (\s -> s { stateTopFrame = parentFrame  })
     return retval)
 
 instantiateFunction :: RuntimeFunctionInfo -> InterpIO ([Arg] -> ByteCode)
@@ -142,9 +148,9 @@ instantiateFunction rfi =
         error "[BUG] cannot dereference free variable"
   in do
   ps <- MS.get
-  let closure = stateTopFrame ps
-  freev <- mapM (xd closure) (fFreeVariables rfi)
-  res <- applyArgs (fBody rfi) (Map.fromList freev) (fArgsTypes rfi)
+  let parentFrame  = stateTopFrame ps
+  freev <- mapM (xd parentFrame ) (fFreeVariables rfi)
+  res <- applyArgs (fBody rfi) parentFrame (Map.fromList freev) (fArgsTypes rfi)
   return res
 
 argRepr :: [RFIArg] -> String

@@ -7,7 +7,7 @@ import qualified Data.Set as Set
 
 
 stdlib :: Map.Map String RuntimeFunctionInfo
-stdlib = Map.fromList [intOp "+" intAdd]
+stdlib = Map.fromList intOps
   
 
 wrapStdlib :: String -> [RFIArg] -> VType -> FunctionBody -> RuntimeFunctionInfo
@@ -21,6 +21,19 @@ wrapStdlib name args rettype body = RFI {
   fBody = body}
 
 ------------------------------------ INTEGER -----------------------------------
+intOps = [
+  ("=", wrapStdlib "=" 
+    [("lhs", PassRef, IntegerType), ("rhs", PassVal, IntegerType)] 
+    IntegerType intAssign),
+  intOp "+" intAdd]
+
+intAssign :: FunctionBody
+intAssign = do
+  frame <- MS.gets stateTopFrame
+  v <- getVar frame "rhs"
+  updateVar "lhs" (\_ -> v)
+  return (Just v)
+
 intOp :: String -> FunctionBody -> (String, RuntimeFunctionInfo)
 intOp name body = 
   let args = [("lhs", PassVal, IntegerType), ("rhs", PassVal, IntegerType)] in
