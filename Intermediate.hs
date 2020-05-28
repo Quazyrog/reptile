@@ -125,7 +125,8 @@ applyArgs body closure argInfo =
     ps <- MS.get
     MS.put (f `deepseq` (ps { stateTopFrame = f }))
     retval <- body
-    retval `deepseq` (shutdownFrame f)
+    f' <- retval `deepseq` (MS.gets stateTopFrame)
+    shutdownFrame f'
     MS.modify (\s -> s { stateTopFrame = closure })
     return retval)
 

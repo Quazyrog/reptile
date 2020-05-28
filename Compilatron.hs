@@ -1,3 +1,4 @@
+{-# LANGUAGE ScopedTypeVariables #-}
 module Compilatron where
 import qualified Data.Map as Map
 import Data.Maybe (isJust, fromJust)
@@ -50,9 +51,21 @@ compileInstr (DoAll is) =
     instrs = map compileInstr is
   in composeInstr instrs
 compileInstr (Compute expr) = compileExpr expr
-compileInstr (Declare "int" names) = error "todo"
+compileInstr (Declare "int" names) = do
+    f <- MS.gets stateTopFrame
+    f' <- MS.foldM putVar f names
+    MS.modify (\s -> s { stateTopFrame = f' })
+    return Nothing
 compileInstr a = undefined
 
+
+putVar :: (Map.Map String Integer) -> String -> InterpIO (Map.Map String Integer)
+putVar f name = do 
+      if Map.member name f then do
+        error ("[BUG] Redeclaration of a variable " ++ name)
+      else do
+        ref <- putRef (VInt 0)
+        return (Map.insert name ref f)
 
 composeInstr :: [FunctionBody] -> FunctionBody
 composeInstr [] = do return Nothing
