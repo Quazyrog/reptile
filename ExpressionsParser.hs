@@ -25,7 +25,7 @@ operators = Map.fromList $ (999, LiteralLevel) : (
     OperatorLevel 0 ToRight (Set.fromList ["="]),
     OperatorLevel 1 ToRight (Set.fromList ["&&", "||"]),
     OperatorLevel 2 Unary   (Set.fromList ["!"]),
-    OperatorLevel 3 ToRight (Set.fromList ["<", "<=", ">", ">=", "=="]),
+    OperatorLevel 3 ToRight (Set.fromList ["<", "<=", ">", ">=", "==", "!="]),
     OperatorLevel 4 ToLeft (Set.fromList ["+", "-"]), -- string concatenation
     OperatorLevel 5 ToRight (Set.fromList ["*", "/", "%"]),
     OperatorLevel 6 Unary   (Set.fromList ["-"]),
@@ -52,7 +52,7 @@ instance NFData Expression where
   rnf (ConstStr s) = s `seq` ()
   rnf (ConstLog b) = b `seq` ()
 instance Show Expression where
-  show (Call fn es) = fn ++ "(" ++ (intercalate ", " (map show es)) ++ ")"
+  show (Call fn es) = "{" ++ fn ++ "}@(" ++ (intercalate ", " (map show es)) ++ ")"
   show (Var s) = "$" ++ s
   show (ConstInt i) = show i
   show (ConstStr s) = show s

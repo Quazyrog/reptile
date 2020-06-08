@@ -37,7 +37,7 @@ compileExpr (Call fname args) = do
     retval <- bytecode vargs 
     return retval
   else do
-    error ("[BUG] Called undefined function " ++ fname)
+    error ("[BUG] Called undefined function " ++ (trace (show (Map.keys functions)) fname))
 
 
 compileArgs :: [RFIArg] -> [Expression] -> InterpIO [Arg]
@@ -59,21 +59,26 @@ compileInstr (DoAll is) =
     instrs = map compileInstr is
   in composeInstr instrs
 compileInstr (Compute expr) = compileExpr expr
-compileInstr (Declare "int" names) = do
-    f <- MS.gets stateTopFrame
-    f' <- MS.foldM putVar f names
-    MS.modify (\s -> s { stateTopFrame = f' })
-    return Nothing
+compileInstr (Declare "int" names) = putVars (VInt 0) names
+compileInstr (Declare "str" names) = putVars (VStr "") names
+compileInstr (Declare "bool" names) = putVars (VBool False) names
 compileInstr a = undefined
 
 
-putVar :: (Map.Map String Integer) -> String -> InterpIO (Map.Map String Integer)
-putVar f name = do 
+putVar :: VData -> (Map.Map String Integer) -> String -> InterpIO (Map.Map String Integer)
+putVar init f name = do 
       if Map.member name f then do
         error ("[BUG] Redeclaration of a variable " ++ name)
       else do
-        ref <- putRef (VInt 0)
+        ref <- putRef init
         return (Map.insert name ref f)
+
+putVars :: VData -> [String] -> FunctionBody
+putVars init names = do
+    f <- MS.gets stateTopFrame
+    f' <- MS.foldM (putVar init) f names
+    MS.modify (\s -> s { stateTopFrame = f' })
+    return Nothing
 
 composeInstr :: [FunctionBody] -> FunctionBody
 composeInstr [] = do return Nothing

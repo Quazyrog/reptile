@@ -15,7 +15,7 @@ data ProgramState = PS {
 }
 
 ------------------------------------ MEMORY ------------------------------------
-data VType = IntegerType | BoolType | StringType
+data VType = IntegerType | BoolType | StringType deriving (Eq, Show)
 data VData = VInt Integer | VBool Bool | VStr String deriving Show
 instance NFData VData where
   rnf (VInt v) = v `seq` ()
@@ -91,7 +91,7 @@ updateVar vname operation = do
 
 
 ---------------------------------- FUNCTIONS -----------------------------------
-data ArgPassType = PassRef | PassVal
+data ArgPassType = PassRef | PassVal deriving Show
 data Arg = Value VData | Reference Integer
 type RFIArg = (String, ArgPassType, VType)
 type FunctionBody = ByteCode
@@ -99,7 +99,7 @@ data RuntimeFunctionInfo = RFI {
   fName :: String,
   fBoundVariables :: [String],
   fFreeVariables :: [String],
-  fLocalFunctions :: Map.Map String RuntimeFunctionInfo,
+  fLocalFunctions :: RTRegister,
   fArgsTypes :: [RFIArg],
   fReturnType :: VType,
   fBody :: FunctionBody
@@ -153,14 +153,23 @@ instantiateFunction rfi =
   res <- applyArgs (fBody rfi) parentFrame (Map.fromList freev) (fArgsTypes rfi)
   return res
 
-argRepr :: [RFIArg] -> String
-argRepr _ = "" -- FIXME temporarily for texting
-argRepr [] = ""
-argRepr ((_, pass, t):args) = 
+
+------------------------------ FUNCTION REGISTER -------------------------------
+type FunctionID = String
+type Overloading = ([(ArgPassType, VType)], FunctionID)
+type CTRegister = Map.Map String Overloading
+type RTRegister = Map.Map FunctionID RuntimeFunctionInfo
+
+argsRepr :: [RFIArg] -> String
+argsRepr rfiArgs = argsRepr' (map (\(_, p, t) -> (p, t)) rfiArgs)
+
+argsRepr' :: [(ArgPassType, VType)] -> String
+argsRepr' [] = ""
+argsRepr' ((pass, t):args) = 
   let 
     pStr PassRef = "&"
     pStr PassVal = "="
     tStr IntegerType = "i"
     tStr BoolType = "b"
     tStr StringType = "s"
-  in "(" ++ (pStr pass) ++ (tStr t) ++ ")" ++ (argRepr args)
+  in "(" ++ (pStr pass) ++ (tStr t) ++ ")" ++ (argsRepr' args)

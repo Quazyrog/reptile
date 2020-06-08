@@ -35,6 +35,10 @@ data Argument =
   ByRef String String |
   ByConstVal String String
   deriving Show
+instance NFData Argument where
+  rnf (ByVal n t) = n `deepseq` t `deepseq` ()
+  rnf (ByRef n t) = n `deepseq` t `deepseq` ()
+  rnf (ByConstVal n t) = n `deepseq` t `deepseq` ()
 
 data AST = 
   DoAll [AST] |
@@ -43,7 +47,12 @@ data AST =
   Declare String [String] |
   DeclareFun String [Argument] String AST
 instance NFData AST where
+  rnf (DoAll instrs) = instrs `deepseq` ()
+  rnf (Decide expr condInstr) = expr `deepseq` condInstr `deepseq` ()
   rnf (Compute exp) = exp `deepseq` ()
+  rnf (Declare t vs) = t `deepseq` vs `deepseq` ()
+  rnf (DeclareFun vn args rt body) = 
+    vn `deepseq` args `deepseq` rt `deepseq` body `deepseq` ()
 instance Show AST where
   show ast = 
     let
