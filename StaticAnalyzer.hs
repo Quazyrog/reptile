@@ -9,17 +9,40 @@ import Stdlib (stdlib)
 import Data.Maybe (isJust, fromJust)
 
 data AnalyzerState = AnalyzerState {
+  asClosureState :: Maybe AnalyzerState,
+  asFreeVariables :: String,
   asVars :: Vars,
   asFuns :: Overloads,
-  asReturn :: VType,
-  asAllowFunctionDeclaration :: Bool
+  asReturn :: VType
 }
-initialAnalyzerState = AnalyzerState {
+subscopeState parent = AnalyzerState {
+  asClosureState = parent,
+  asFreeVariables = [],
   asVars = Map.empty,
   asFuns = stdlibInfo,
-  asReturn = IntegerType,
-  asAllowFunctionDeclaration = True
+  asReturn = IntegerType
 }
+initialAnalyzerState = subscopeState Nothing
+
+findVariable' :: String -> AnalyzerState -> (VType,  AnalyzerState)
+findVariable' name state = 
+  let typeMaybe = Map.lookup name (asVars state) in
+  if isJust typeMaybe then
+    (fromJust typeMaybe, state)
+  else if isJust (asClosureState state) then
+    let 
+      (vtype, closure') = findVariable' name (fromJust (asClosureState state))
+      vars' = Map.insert name vtype (asVars state) 
+    in (vtype, state { asVars = vars', asClosureState = Just closure' })
+  else
+    error ("Variable " ++ name ++ " not found in surrounding scopes")
+
+findVariable :: String -> State AnalyzerState VType
+findVariable name = do
+  state <- MS.get
+  let (vtype, state') = findVariable' name state
+  MS.put state'
+  return vtype
 
 data FunctionType = FTypeInfo {
   ftReturn :: VType,
@@ -41,7 +64,10 @@ stdlibInfo =
 transform' :: AST -> State AnalyzerState AST
 -- |Statefuly transform given AST preforming name mangling and type checking
 transform' (DoAll instr) = do
-  instr' <- mapM transform' instr
+  s <- MS.get
+  let ss = subscopeState (Just s)
+  let (instr', ss') = MS.runState (mapM transform' instr) ss
+  MS.put (fromJust (asClosureState ss'))
   return (DoAll instr')
 transform' instr@(Declare typename idents) = 
   let
@@ -53,14 +79,12 @@ transform' instr@(Declare typename idents) =
   mapM (injectVar (typeFromName typename)) idents
   return instr
 transform' (Compute expr) = do 
-  s <- MS.get
-  let expr' = fst (checkType expr s)
+  (expr', _) <- checkType expr
   return (Compute expr')
 transform' (Decide condi condiInstr) = do
-  s <- MS.get
-  let (condi', t) = checkType condi s
+  (condi', t) <- checkType condi
   if t == BoolType then do
-    let condiInstr' = MS.evalState (transform' condiInstr) (s { asAllowFunctionDeclaration = False })
+    condiInstr' <- transform' condiInstr
     return (Decide condi' condiInstr')
   else do
     error "Condition in if statement has no boolean type"
@@ -75,43 +99,40 @@ injectVar t name = do
   else do
     MS.put s { asVars = Map.insert name t (asVars s) }
 
-checkType :: Expression -> AnalyzerState -> (Expression, VType)
+checkType :: Expression -> State AnalyzerState (Expression, VType)
 -- |Preform type check on expression together with name mangling
-checkType c@(ConstInt _) _ = (c, IntegerType)
-checkType c@(ConstStr _) _ = (c, StringType)
-checkType c@(ConstLog _) _ = (c, BoolType)
-checkType v@(EParser.Var vn) state = 
-  let typeMaybe = Map.lookup vn (asVars state) in
-  if isJust typeMaybe then 
-    (v, fromJust typeMaybe)
-  else
-    error ("Undeclared variable " ++ vn)
-checkType (Call basename args) state = 
-  let overloads = Map.lookup basename (asFuns state) in
-  if isJust overloads then
-    let 
-      typedArgs = map (typeArg state) args
-      transformedArgs = map (\(expr, _, _) -> expr) typedArgs
-      argsTypeInfo = map (\(_, ref, t) -> (ref, t)) typedArgs
-      funInfo = lookupOverload (fromJust overloads) argsTypeInfo
-    in
-    if isJust funInfo then
-      let f = fromJust funInfo in
-      (Call (mangleName basename f) transformedArgs, ftReturn f)
-    else 
+checkType c@(ConstInt _) = do return (c, IntegerType)
+checkType c@(ConstStr _) = do return (c, StringType)
+checkType c@(ConstLog _) = do return (c, BoolType)
+checkType v@(EParser.Var vn) = do
+  vtype <- findVariable vn
+  return (v, vtype)
+checkType (Call basename args) = do
+  functions <- MS.gets asFuns
+  let overloads = Map.lookup basename functions
+  if isJust overloads then do
+    typedArgs <- mapM typeArg args
+    let transformedArgs = map (\(expr, _, _) -> expr) typedArgs
+    let argsTypeInfo = map (\(_, ref, t) -> (ref, t)) typedArgs
+    let funInfo = lookupOverload (fromJust overloads) argsTypeInfo
+    if isJust funInfo then do
+      let f = fromJust funInfo
+      return (Call (mangleName basename f) transformedArgs, ftReturn f)
+    else do
       error ("No suitable overload of '" ++ basename 
         ++ "' for " ++ (show argsTypeInfo))
-  else
+  else do
     error ("Unknown function '" ++ basename ++"'")
 
-typeArg :: AnalyzerState -> Expression -> (Expression, Bool, VType)
+typeArg :: Expression -> State AnalyzerState (Expression, Bool, VType)
 -- |Mangle names in expression, check it's type and if it can be passed as reference.
-typeArg state expr = 
+typeArg expr = 
   let 
     isLvalue (EParser.Var _) = True
     isLvalue _ = False
-    (expr', exprType) = checkType expr state
-  in (expr', isLvalue expr', exprType)
+  in do
+    (expr', exprType) <- checkType expr
+    return (expr', isLvalue expr', exprType)
 
 lookupOverload :: [FunctionType] -> [(Bool, VType)] -> Maybe FunctionType
 -- | Find valid overloaded version for given arguments

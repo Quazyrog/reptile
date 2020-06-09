@@ -54,7 +54,14 @@ compileInstr :: AST -> FunctionBody
 compileInstr (DoAll is) = 
   let 
     instrs = map compileInstr is
-  in composeInstr instrs
+  in do
+    stack <- MS.gets stateTopFrames
+    MS.modify (\s -> s { stateTopFrames = Map.empty : stack } )
+    res <- composeInstr instrs
+    stack' <- MS.gets stateTopFrames
+    shutdownFrame (head stack')
+    MS.modify (\s -> s { stateTopFrames = stack } )
+    return res
 compileInstr (Compute expr) = compileExpr expr
 compileInstr (Declare "int" names) = putVars (VInt 0) names
 compileInstr (Declare "str" names) = putVars (VStr "") names

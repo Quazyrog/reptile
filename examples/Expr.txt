@@ -18,8 +18,15 @@ assert(0 > -1 && true)
 
 a = inputi("Number A? ")
 b = inputi("Number B? ")
-if a + b == 42:
-  int x1, y1
-  x1 = 11 + y1
-  println("Congrats! You got me, " + name + "! :)  " + str(x1))
+assert(y == 4)
+if true:
+  int y
+  y = 1
+  assert(y == 1)
+  if a + b == 42:
+    int xx
+    xx = 11 + y
+    assert(xx == 12 && z == 1280)
+    println("Congrats! You got me, " + name + "! :)  ")
+assert(y == 4)
 println("Sum of A and B is " + str(a + b))

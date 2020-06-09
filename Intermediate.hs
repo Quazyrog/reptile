@@ -147,13 +147,15 @@ applyArgs body parentFrames closure argInfo =
 instantiateFunction :: RuntimeFunctionInfo -> InterpIO ([Arg] -> ByteCode)
 instantiateFunction rfi = 
   let 
+    bottomMostSubframes (f1:(f0:[])) = f1:[f0]
+    bottomMostSubframes (f:fs) = bottomMostSubframes fs
     buildClosure fs vn = do
       let id = getVarRef' fs vn
       incRef id
       return (vn, id)
   in do
   ps <- MS.get
-  let parentFrames = stateTopFrames ps
+  let parentFrames = (stateTopFrames ps) -- bottomMostSubframes (stateTopFrames ps)
   freev <- mapM (buildClosure parentFrames) (fFreeVariables rfi)
   res <- applyArgs (fBody rfi) parentFrames (Map.fromList freev) (fArgsTypes rfi)
   return res
