@@ -13,7 +13,7 @@ import qualified Control.Monad.State.Strict as MS
 initialState :: ProgramState
 initialState = PS {
   stateMemory = Map.empty,
-  stateTopFrame = Map.empty,
+  stateTopFrames = [Map.empty],
   stateMemoryCounter = 1,
   stateFunctionScope = Stdlib.stdlib }
 
@@ -22,11 +22,9 @@ compileExpr (ConstInt v) = do return (Just (VInt v))
 compileExpr (ConstStr v) = do return (Just (VStr v))
 compileExpr (ConstLog v) = do return (Just (VBool v))
 compileExpr (EP.Var vname) = do
-  frame <- MS.gets stateTopFrame
-  vdata <- getVar frame vname
+  vdata <- getVar vname
   return (vdata `deepseq` (Just vdata))
 compileExpr (Call fname args) = do
-  frame <- MS.gets stateTopFrame
   functions <- args `deepseq` MS.gets stateFunctionScope
   let funRFI = Map.lookup fname functions
   if isJust funRFI then do
@@ -48,8 +46,7 @@ compileArgs ((_, PassVal, _):rfis) (arg:args) = do
   rest <- compileArgs rfis args
   return ((Value varg) : rest)
 compileArgs ((_, PassRef, _):rfis) ((EP.Var vname):args) = do
-  f <- MS.gets stateTopFrame
-  let (Just id) = Map.lookup vname f
+  id <- getVarRef vname
   rest <- compileArgs rfis args
   return ((Reference id) : rest)
 
@@ -86,16 +83,15 @@ putVar init f name = do
 
 putVars :: VData -> [String] -> FunctionBody
 putVars init names = do
-    f <- MS.gets stateTopFrame
-    f' <- MS.foldM (putVar init) f names
-    MS.modify (\s -> s { stateTopFrame = f' })
+    f <- MS.gets stateTopFrames
+    f' <- MS.foldM (putVar init) (head f) names
+    MS.modify (\s -> s { stateTopFrames = f' : (tail f) })
     return Nothing
 
 composeInstr :: [FunctionBody] -> FunctionBody
 composeInstr [] = do return Nothing
 composeInstr (e:es) = 
   let rest = composeInstr es in do
-    f <- MS.gets stateTopFrame
     r1 <- e
     r2 <- r1 `deepseq` rest
     if isJust r2 then do return r2 else do return r1

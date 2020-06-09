@@ -9,7 +9,7 @@ import Debug.Trace
 type InterpIO = MS.StateT ProgramState IO
 data ProgramState = PS {
   stateMemory :: Memory,
-  stateTopFrame :: Frame,
+  stateTopFrames :: [Frame],
   stateMemoryCounter :: Integer,
   stateFunctionScope :: Map.Map String RuntimeFunctionInfo
 }
@@ -33,16 +33,29 @@ find memory id =
   else 
     error "[BUG] Dereference deleted variable"
 
-getVar :: Frame -> String -> InterpIO VData
-getVar frame vname = do
-  s <- MS.get
-  let ref = Map.lookup vname frame
-  if isJust ref then do
-    let (Var _ d) = find (stateMemory s) (fromJust ref)
-    return d
-  else do
-    error ("[BUG] No entry in frame: " ++ (show frame))
+getVarRef :: String -> InterpIO Integer
+getVarRef vname = do
+    ps <- MS.get
+    let ref = getVarRef' (stateTopFrames ps) vname
+    return ref
 
+getVarRef' :: [Frame] -> String  -> Integer
+getVarRef' [] vname = error ("[BUG] No entry in frame for " ++ vname)
+getVarRef' (frame:fs) vname =
+  let ref = Map.lookup vname frame in
+  if isJust ref then
+    fromJust ref
+  else
+    getVarRef' fs vname
+
+
+getVar :: String -> InterpIO VData
+getVar vname = do
+  ps <- MS.get
+  ref <- getVarRef vname
+  let (Var _ d) = find (stateMemory ps) ref
+  return d
+  
 updateMemory :: (Memory -> Memory) -> InterpIO ()
 updateMemory modify = do
   state <- MS.get
@@ -80,14 +93,10 @@ decRef id = do
 updateVar :: String -> (VData -> VData) -> InterpIO ()
 updateVar vname operation = do
   ps <- MS.get
-  let id = Map.lookup vname (stateTopFrame ps)
-  if isJust id then do
-    let jid = fromJust id
-    let (Var refc val) = find (stateMemory ps) jid
-    updateMemory (\m -> Map.insert jid (Var (refc + 1) (operation val)) m)
-    return ()
-  else do 
-    error ("[BUG] Dereference undeclared variable " ++ vname)
+  jid <- getVarRef vname
+  let (Var refc val) = find (stateMemory ps) jid
+  updateMemory (\m -> Map.insert jid (Var (refc + 1) (operation val)) m)
+  return ()
 
 
 ---------------------------------- FUNCTIONS -----------------------------------
@@ -124,33 +133,29 @@ shutdownFrame f = do
   mapM decRef (Map.elems f)
   return ()
 
-applyArgs :: FunctionBody -> Frame -> Frame -> [RFIArg] -> InterpIO ([Arg] -> ByteCode)
-applyArgs body parentFrame closure argInfo = 
+applyArgs :: FunctionBody -> [Frame] -> Frame -> [RFIArg] -> InterpIO ([Arg] -> ByteCode)
+applyArgs body parentFrames closure argInfo = 
   return (\args -> do
     f <- updateFrame closure argInfo args
     ps <- MS.get
-    MS.put (f `deepseq` (ps { stateTopFrame = f }))
+    MS.put (f `deepseq` (ps { stateTopFrames = [f] }))
     retval <- body
-    f' <- retval `deepseq` (MS.gets stateTopFrame)
-    shutdownFrame f'
-    MS.modify (\s -> s { stateTopFrame = parentFrame  })
+    shutdownFrame f
+    MS.modify (\s -> s { stateTopFrames = parentFrames })
     return retval)
 
 instantiateFunction :: RuntimeFunctionInfo -> InterpIO ([Arg] -> ByteCode)
 instantiateFunction rfi = 
   let 
-    xd f vn = do
-      let id = Map.lookup vn f
-      if isJust id then do 
-        incRef (fromJust id)
-        return (vn, fromJust id)
-      else 
-        error "[BUG] cannot dereference free variable"
+    buildClosure fs vn = do
+      let id = getVarRef' fs vn
+      incRef id
+      return (vn, id)
   in do
   ps <- MS.get
-  let parentFrame  = stateTopFrame ps
-  freev <- mapM (xd parentFrame ) (fFreeVariables rfi)
-  res <- applyArgs (fBody rfi) parentFrame (Map.fromList freev) (fArgsTypes rfi)
+  let parentFrames = stateTopFrames ps
+  freev <- mapM (buildClosure parentFrames) (fFreeVariables rfi)
+  res <- applyArgs (fBody rfi) parentFrames (Map.fromList freev) (fArgsTypes rfi)
   return res
 
 

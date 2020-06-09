@@ -39,8 +39,7 @@ intOps = [
 
 intAssign :: FunctionBody
 intAssign = do
-  frame <- MS.gets stateTopFrame
-  v <- getVar frame "rhs"
+  v <- getVar "rhs"
   updateVar "lhs" (\_ -> v)
   return (Just v)
 
@@ -49,9 +48,8 @@ intOp name op =
   let 
     args = [("lhs", PassVal, IntegerType), ("rhs", PassVal, IntegerType)] 
     body = do
-      frame <- MS.gets stateTopFrame
-      (VInt lhs) <- getVar frame "lhs"
-      (VInt rhs) <- getVar frame "rhs"
+      (VInt lhs) <- getVar "lhs"
+      (VInt rhs) <- getVar "rhs"
       return (Just (VInt (op lhs rhs)))
   in
   wrapStdlib name args IntegerType body
@@ -61,9 +59,8 @@ intCmpOp name op =
   let 
     args = [("lhs", PassVal, IntegerType), ("rhs", PassVal, IntegerType)] 
     body = do
-      frame <- MS.gets stateTopFrame
-      (VInt lhs) <- getVar frame "lhs"
-      (VInt rhs) <- getVar frame "rhs"
+      (VInt lhs) <- getVar "lhs"
+      (VInt rhs) <- getVar "rhs"
       return (Just (VBool (op lhs rhs)))
   in
   wrapStdlib name args BoolType body
@@ -74,8 +71,7 @@ intNeg =
     returnType = IntegerType
     args = [("arg", PassVal, IntegerType)] 
     body = do
-      frame <- MS.gets stateTopFrame
-      (VInt arg) <- getVar frame "arg"
+      (VInt arg) <- getVar "arg"
       return (Just (VInt (-arg)))
   in wrapStdlib baseName args returnType body
 
@@ -85,8 +81,7 @@ intToStr =
     returnType = StringType
     args = [("arg", PassVal, IntegerType)] 
     body = do
-      frame <- MS.gets stateTopFrame
-      (VInt arg) <- getVar frame "arg"
+      (VInt arg) <- getVar "arg"
       return (Just (VStr (show arg)))
   in wrapStdlib baseName args returnType body
 
@@ -98,9 +93,8 @@ boolOp name op =
   let 
     args = [("lhs", PassVal, BoolType), ("rhs", PassVal, BoolType)] 
     body = do
-      frame <- MS.gets stateTopFrame
-      (VBool lhs) <- getVar frame "lhs"
-      (VBool rhs) <- getVar frame "rhs"
+      (VBool lhs) <- getVar "lhs"
+      (VBool rhs) <- getVar "rhs"
       return (Just (VBool (op lhs rhs)))
   in (name ++ (argsRepr args), wrapStdlib name args BoolType body)
 
@@ -110,8 +104,7 @@ boolNeg =
     returnType = BoolType
     args = [("arg", PassVal, BoolType)] 
     body = do
-      frame <- MS.gets stateTopFrame
-      (VBool arg) <- getVar frame "arg"
+      (VBool arg) <- getVar "arg"
       return (Just (VBool (not arg)))
   in (baseName ++ (argsRepr args), wrapStdlib baseName args returnType body)
 
@@ -121,8 +114,7 @@ boolToStr =
     returnType = StringType
     args = [("arg", PassVal, BoolType)] 
     body = do
-      frame <- MS.gets stateTopFrame
-      (VBool arg) <- getVar frame "arg"
+      (VBool arg) <- getVar "arg"
       return (Just (VStr (show arg)))
   in (baseName ++ (argsRepr args), wrapStdlib baseName args returnType body)
 
@@ -133,9 +125,8 @@ concatStr =
     returnType = StringType
     args = [("lhs", PassVal, StringType), ("rhs", PassVal, StringType)] 
     body = do
-      frame <- MS.gets stateTopFrame
-      (VStr lhs) <- getVar frame "lhs"
-      (VStr rhs) <- getVar frame "rhs"
+      (VStr lhs) <- getVar "lhs"
+      (VStr rhs) <- getVar "rhs"
       return (Just (VStr (lhs ++ rhs)))
   in (baseName ++ (argsRepr args), wrapStdlib baseName args returnType body)
 
@@ -145,8 +136,7 @@ setStr =
     returnType = StringType
     args = [("lhs", PassRef, StringType), ("rhs", PassVal, StringType)] 
     body = do
-      frame <- MS.gets stateTopFrame
-      v <- getVar frame "rhs"
+      v <- getVar "rhs"
       updateVar "lhs" (\_ -> v)
       return (Just v)
   in (baseName ++ (argsRepr args), wrapStdlib baseName args returnType body)
@@ -159,8 +149,7 @@ println =
     returnType = IntegerType
     args = [("arg", PassVal, StringType)] 
     body = do
-      frame <- MS.gets stateTopFrame
-      (VStr s) <- getVar frame "arg"
+      (VStr s) <- getVar "arg"
       MS.liftIO (putStrLn s)
       return (Just (VInt 0))
   in (baseName ++ (argsRepr args), wrapStdlib baseName args returnType body)
@@ -171,8 +160,7 @@ assert =
     returnType = IntegerType
     args = [("arg", PassVal, BoolType)] 
     body = do
-      frame <- MS.gets stateTopFrame
-      (VBool arg) <- getVar frame "arg"
+      (VBool arg) <- getVar "arg"
       if arg then do return (Just (VInt 0)) 
       else do error "Assertion failed"
   in (baseName ++ (argsRepr args), wrapStdlib baseName args returnType body)
@@ -183,8 +171,7 @@ inputi =
     returnType = IntegerType
     args = [("prompt", PassVal, StringType)] 
     body = do
-      frame <- MS.gets stateTopFrame
-      (VStr prompt) <- getVar frame "prompt"
+      (VStr prompt) <- getVar "prompt"
       MS.liftIO (putStr prompt)
       MS.liftIO (System.IO.hFlush System.IO.stdout)
       line <- MS.liftIO getLine
@@ -197,8 +184,7 @@ inputs =
     returnType = StringType
     args = [("prompt", PassVal, StringType)] 
     body = do
-      frame <- MS.gets stateTopFrame
-      (VStr prompt) <- getVar frame "prompt"
+      (VStr prompt) <- getVar "prompt"
       MS.liftIO (putStr prompt)
       MS.liftIO (System.IO.hFlush System.IO.stdout)
       line <- MS.liftIO getLine
