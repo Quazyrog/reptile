@@ -11,12 +11,14 @@ import Data.Maybe (isJust, fromJust)
 data AnalyzerState = AnalyzerState {
   asVars :: Vars,
   asFuns :: Overloads,
-  asReturn :: VType
+  asReturn :: VType,
+  asAllowFunctionDeclaration :: Bool
 }
 initialAnalyzerState = AnalyzerState {
   asVars = Map.empty,
   asFuns = stdlibInfo,
-  asReturn = IntegerType
+  asReturn = IntegerType,
+  asAllowFunctionDeclaration = True
 }
 
 data FunctionType = FTypeInfo {
@@ -54,6 +56,14 @@ transform' (Compute expr) = do
   s <- MS.get
   let expr' = fst (checkType expr s)
   return (Compute expr')
+transform' (Decide condi condiInstr) = do
+  s <- MS.get
+  let (condi', t) = checkType condi s
+  if t == BoolType then do
+    let condiInstr' = MS.evalState (transform' condiInstr) (s { asAllowFunctionDeclaration = False })
+    return (Decide condi' condiInstr')
+  else do
+    error "Condition in if statement has no boolean type"
 transform' other = do return other
 
 injectVar :: VType -> String -> State AnalyzerState ()

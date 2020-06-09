@@ -62,6 +62,17 @@ compileInstr (Compute expr) = compileExpr expr
 compileInstr (Declare "int" names) = putVars (VInt 0) names
 compileInstr (Declare "str" names) = putVars (VStr "") names
 compileInstr (Declare "bool" names) = putVars (VBool False) names
+compileInstr (Decide condi condiInstr) = 
+  let
+    condi' = compileInstr (Compute condi)
+    condiInstr' = compileInstr condiInstr
+  in do
+  (Just (VBool bool)) <- condi'
+  if bool then do 
+    ret <- condiInstr'
+    return ret 
+  else do
+    return Nothing
 compileInstr a = undefined
 
 

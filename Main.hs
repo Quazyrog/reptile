@@ -18,7 +18,9 @@ main = do
   let ast = State.evalState (parseBlock 0) tkz
   let ast' = StaticAnalyzer.transform ast
   -- putStrLn (show ast')
-  let program = Compilatron.compileInstr ast'
-  result <- ast' `deepseq` (State.evalStateT program Compilatron.initialState)
+  let program = ast' `deepseq` Compilatron.compileInstr ast'
+  -- All errors should be found by (fully implemented) static analyzer, 
+  -- so no need to deepseq the program
+  result <- (State.evalStateT program Compilatron.initialState)
   -- putStrLn ("\nResult: " ++ (show result))
   IO.hClose handle  
