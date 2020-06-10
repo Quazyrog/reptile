@@ -1,0 +1,11 @@
+def min(val a as int, val b as int) as int:
+  if a < b:
+    return a
+  return b
+
+def main() as int:
+  int a, b
+  a = 12
+  b = 42
+  println("MIN(" + str(a) + ", " + str(b) + ") = " + str(min(a, b)))
+  return 0

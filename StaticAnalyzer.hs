@@ -189,16 +189,16 @@ mangleName basename funt = basename ++ (argsRepr' (ftArgs funt))
 
 transformDeclaration :: AST -> State ProgramInfo ()
 transformDeclaration (DeclareFun name args rt body) = do
-  pi <- MS.get
   let rfi = initializeRFI name args rt
+  let ftype = typeOf rfi
+  MS.modify (\s -> s { piGlobalState = insertFunDeclaration name ftype (piGlobalState s) })
+  pi <- MS.get
   let is = injectArgs rfi (subscopeState (Just (piGlobalState pi)))
   let (body', is') = MS.runState (transform' body) (is { asReturn = fReturnType rfi })
   let rfi' = rfi { fFreeVariables = asFreeVariables is' }
-  let ftype = typeOf rfi
-  MS.put (pi {
+  MS.modify (\s -> s {
     piFunctions = Map.insert (fName rfi') rfi' (piFunctions pi),
-    piFunctionsSources = Map.insert (fName rfi') body' (piFunctionsSources pi),
-    piGlobalState = insertFunDeclaration name ftype (piGlobalState pi) })
+    piFunctionsSources = Map.insert (fName rfi') body' (piFunctionsSources pi)})
   return ()
 transformDeclaration _ = 
   error "Only variables and functions declarations can be top level constructs in program"

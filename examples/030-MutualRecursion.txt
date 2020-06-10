@@ -1,0 +1,13 @@
+def a(val n as int) as int:
+  if n > 0:
+    println("Called a(" + str(n) + ")")
+    b(n - 1)
+
+def b(val n as int) as int:
+  if n > 0:
+    println("Called b(" + str(n) + ")")
+    a(n - 1)
+
+def main() as int:
+  a(16)
+  return 0

@@ -25,6 +25,12 @@ compileAll program =
       in rfi { fBody = compileInstr source }
   in Map.fromList (map (\t -> (t, compile t)) targets)
 
+initialize :: ProgramInfo -> ProgramState
+initialize program =
+  let 
+    text = Map.union (compileAll program) (stateFunctionScope initialState)
+  in initialState { stateFunctionScope = text }
+
 main = do 
   args <- getArgs
   handle <- IO.openFile (args !! 0) IO.ReadMode  
@@ -33,12 +39,12 @@ main = do
   let ast = MS.evalState (parseBlock 0) tkz
   let ast' = StaticAnalyzer.transform ast
   -- putStrLn (show ast')
-  let program = ast' `deepseq` compileAll ast'
+  let program = ast' `deepseq` initialize ast'
   -- All errors should be found by (fully implemented) static analyzer, 
   -- so no need to deepseq the program
-  let main = Map.lookup "main" program
+  let main = Map.lookup "main" (stateFunctionScope program)
   if isJust main then do
-    result <- (MS.evalStateT (fBody (fromJust main)) Compilatron.initialState)
+    result <- (MS.evalStateT (fBody (fromJust main)) program)
     IO.hClose handle
     putStrLn ("\n\n=====\nProgram finished; return value = " ++ (show result))
     System.Exit.exitWith System.Exit.ExitSuccess 

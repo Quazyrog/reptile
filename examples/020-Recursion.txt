@@ -1,0 +1,13 @@
+def fibonacci(val n as int) as int:
+  if n <= 1:
+    return 1
+  return fibonacci(n - 1) + fibonacci(n - 2)
+
+def loop(val i as int, val maxn as int) as void:
+  if i <= maxn:
+    println("Fibonacci " + str(i) + ":  " + str(fibonacci(i)))
+    loop(i + 1, maxn)
+
+def main() as int:
+  loop(0, 16)
+  return 0
