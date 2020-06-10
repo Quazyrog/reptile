@@ -1,6 +1,6 @@
-def main() as int:
+def main() as void:
   assert(2 + 2 + 6 == 10)
-  int a, b  
+  int a, b
   assert(b + b == 0)
   a = 5
   b = a + b
@@ -17,6 +17,8 @@ def main() as int:
   assert(z == 1280)
   assert(0 > -1 && true)
 
+  return 2
+
   a = inputi("Number A? ")
   b = inputi("Number B? ")
   assert(y == 4)
@@ -31,3 +33,5 @@ def main() as int:
       println("Congrats! You got me, " + name + "! :)  ")
   assert(y == 4)
   println("Sum of A and B is " + str(a + b))
+
+  return 0
