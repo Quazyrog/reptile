@@ -15,16 +15,18 @@ data ProgramState = PS {
 }
 
 ------------------------------------ MEMORY ------------------------------------
-data VType = IntegerType | BoolType | StringType deriving (Eq, Show)
+data VType = IntegerType | BoolType | StringType | VoidType deriving (Eq, Show)
 instance NFData VType where
   rnf IntegerType = ()
   rnf BoolType = ()
   rnf StringType = ()
-data VData = VInt Integer | VBool Bool | VStr String deriving Show
+  rnf VoidType = ()
+data VData = VInt Integer | VBool Bool | VStr String | Void deriving Show
 instance NFData VData where
   rnf (VInt v) = v `seq` ()
   rnf (VBool v) = v `seq` ()
   rnf (VStr v) = v `seq` ()
+  rnf Void = ()
 data Variable = Var Int VData
 type Memory = Map.Map Integer Variable
 type Frame = Map.Map String Integer

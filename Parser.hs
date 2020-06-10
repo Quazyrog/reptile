@@ -15,7 +15,7 @@ type Classifier = String -> Bool
 indentWidth = 2
 
 typeNames :: Set.Set String
-typeNames = Set.fromList ["int", "str", "bool", "auto"]
+typeNames = Set.fromList ["int", "str", "bool", "void"]
 
 classifyIdentifier :: Maybe Tkz.Token -> Classifier -> Bool
 classifyIdentifier Nothing _ = False
@@ -26,9 +26,10 @@ isDeclaration ident = Set.member ident typeNames
 
 isIf :: Classifier
 isIf ident = ident == "if"
-
 isFun :: Classifier
 isFun ident = ident == "def"
+isRet :: Classifier
+isRet ident = ident == "return"
 
 data Argument = 
   ByVal String String |
@@ -44,12 +45,14 @@ data AST =
   DoAll [AST] |
   Decide Expression AST |
   Compute Expression |
+  Return Expression |
   Declare String [String] |
   DeclareFun String [Argument] String AST
 instance NFData AST where
   rnf (DoAll instrs) = instrs `deepseq` ()
   rnf (Decide expr condInstr) = expr `deepseq` condInstr `deepseq` ()
   rnf (Compute exp) = exp `deepseq` ()
+  rnf (Return exp) = exp `deepseq` ()
   rnf (Declare t vs) = t `deepseq` vs `deepseq` ()
   rnf (DeclareFun vn args rt body) = 
     vn `deepseq` args `deepseq` rt `deepseq` body `deepseq` ()
@@ -129,6 +132,13 @@ parseIf depth = do
   thenBlock <- parseBlock (depth + 1)
   return (Decide expr thenBlock)
 
+parseReturn :: State Tkz.Tokenizer AST
+parseReturn = do
+  Tkz.expect "return"
+  modify Tkz.skipWhitespace
+  expr <- parseExpression minLevel
+  return (Return expr)
+
 parseFun :: Int -> State Tkz.Tokenizer AST
 parseFun depth = 
   let 
@@ -201,6 +211,10 @@ parseInstr depth = do
     return instr
   else if classify isFun then do
     instr <- parseFun depth
+    assureEOL
+    return instr
+  else if classify isRet then do
+    instr <- parseReturn
     assureEOL
     return instr
   else do

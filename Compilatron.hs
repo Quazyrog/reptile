@@ -62,13 +62,17 @@ compileInstr (DoAll is) =
     shutdownFrame (head stack')
     MS.modify (\s -> s { stateTopFrames = stack } )
     return res
-compileInstr (Compute expr) = compileExpr expr
+compileInstr (Compute expr) = 
+  let compiledExpr = compileExpr expr in do
+  res <- compiledExpr
+  return Nothing
+compileInstr (Return expr) = compileExpr expr
 compileInstr (Declare "int" names) = putVars (VInt 0) names
 compileInstr (Declare "str" names) = putVars (VStr "") names
 compileInstr (Declare "bool" names) = putVars (VBool False) names
 compileInstr (Decide condi condiInstr) = 
   let
-    condi' = compileInstr (Compute condi)
+    condi' = compileExpr condi
     condiInstr' = compileInstr condiInstr
   in do
   (Just (VBool bool)) <- condi'
@@ -100,5 +104,8 @@ composeInstr [] = do return Nothing
 composeInstr (e:es) = 
   let rest = composeInstr es in do
     r1 <- e
-    r2 <- r1 `deepseq` rest
-    if isJust r2 then do return r2 else do return r1
+    if r1 `deepseq` isJust r1 then do 
+      return r1 
+    else do
+      r2 <- rest 
+      return r2

@@ -91,6 +91,7 @@ transform' (DoAll instr) = do
   let (instr', ss') = MS.runState (mapM transform' instr) ss
   MS.put (fromJust (asClosureState ss'))
   return (DoAll instr')
+transform' instr@(Declare "void" idents) = error "Variables declared void"
 transform' instr@(Declare typename idents) = do
   mapM (injectVar (typeFromName typename)) idents
   return instr
@@ -104,12 +105,20 @@ transform' (Decide condi condiInstr) = do
     return (Decide condi' condiInstr')
   else do
     error "Condition in if statement has no boolean type"
+transform' (Return expr) = do
+  rt <- MS.gets asReturn
+  (expr', rt') <- checkType expr
+  if rt' /= rt then do
+    error "Invalid expression for declared return type"
+  else do
+    return (Return expr')
 transform' other = do return other
 
 typeFromName :: String -> VType
 typeFromName "int" = IntegerType
 typeFromName "bool" = BoolType
 typeFromName "str" = StringType
+typeFromName "void" = VoidType
 typeFromName s = error ("Unknown type '" ++ s ++ "'")
 
 injectVar :: VType -> String -> State AnalyzerState ()
@@ -208,9 +217,11 @@ insertFunDeclaration basename ftype state =
 initializeRFI :: String -> [Argument] -> String -> RuntimeFunctionInfo
 initializeRFI basename args ret = 
   let 
-    decodeArg (ByVal name tname) = (name, PassVal, typeFromName tname)
-    decodeArg (ByConstVal name tname) = (name, PassVal, typeFromName tname)
-    decodeArg (ByRef name tname) = (name, PassRef, typeFromName tname)
+    decodeArg (ByVal name tname) = decodeArg' PassVal tname name
+    decodeArg (ByConstVal name tname) = decodeArg' PassVal tname name
+    decodeArg (ByRef name tname) = decodeArg' PassRef tname name
+    decodeArg' _ "void" name = error ("Argument '" ++ name ++ "' declared void")
+    decodeArg' pass tname name = (name, pass, typeFromName tname)
     args' = map decodeArg args
     ret' = typeFromName ret
     rfi0 = RFI {

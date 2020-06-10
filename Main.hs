@@ -40,6 +40,7 @@ main = do
   if isJust main then do
     result <- (MS.evalStateT (fBody (fromJust main)) Compilatron.initialState)
     IO.hClose handle
+    putStrLn ("\n\n=====\nProgram finished; return value = " ++ (show result))
     System.Exit.exitWith System.Exit.ExitSuccess 
   else do
     putStrLn "Error: no main() function defined"
