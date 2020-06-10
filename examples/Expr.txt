@@ -1,32 +1,33 @@
-assert(2 + 2 + 6 == 10)
-int a, b  
-assert(b + b == 0)
-a = 5
-b = a + b
-a = a + b
-assert(a == 10)
-str name
-name = inputs("What is your name? ")
-println("Hello " + name + "!")
+def main() as int:
+  assert(2 + 2 + 6 == 10)
+  int a, b  
+  assert(b + b == 0)
+  a = 5
+  b = a + b
+  a = a + b
+  assert(a == 10)
+  str name
+  name = inputs("What is your name? ")
+  println("Hello " + name + "!")
 
-int x, y, z
-x = 8 ** 2
-y = (8 + 8) / 4
-z = a * x * y / 2
-assert(z == 1280)
-assert(0 > -1 && true)
+  int x, y, z
+  x = 8 ** 2
+  y = (8 + 8) / 4
+  z = a * x * y / 2
+  assert(z == 1280)
+  assert(0 > -1 && true)
 
-a = inputi("Number A? ")
-b = inputi("Number B? ")
-assert(y == 4)
-if true:
-  int y
-  y = 1
-  assert(y == 1)
-  if a + b == 42:
-    int xx
-    xx = 11 + y
-    assert(xx == 12 && z == 1280)
-    println("Congrats! You got me, " + name + "! :)  ")
-assert(y == 4)
-println("Sum of A and B is " + str(a + b))
+  a = inputi("Number A? ")
+  b = inputi("Number B? ")
+  assert(y == 4)
+  if true:
+    int y
+    y = 1
+    assert(y == 1)
+    if a + b == 42:
+      int xx
+      xx = 11 + y
+      assert(xx == 12 && z == 1280)
+      println("Congrats! You got me, " + name + "! :)  ")
+  assert(y == 4)
+  println("Sum of A and B is " + str(a + b))

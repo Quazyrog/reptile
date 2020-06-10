@@ -7,10 +7,29 @@ import ExpressionsParser as EParser
 import Intermediate
 import Stdlib (stdlib)
 import Data.Maybe (isJust, fromJust)
+import Control.DeepSeq
+
+-- |Preform name mangling and type check
+transform :: AST -> ProgramInfo
+transform (DoAll decls) =
+  MS.execState (MS.mapM transformDeclaration decls) emptyProgram
+
+data ProgramInfo = ProgramInfo {
+  piFunctions :: Map.Map String RuntimeFunctionInfo,
+  piFunctionsSources :: Map.Map String AST,
+  piGlobalState :: AnalyzerState
+}
+instance NFData ProgramInfo where
+  rnf (ProgramInfo ff ffss gs) = ff `deepseq` ffss `deepseq` ()
+emptyProgram = ProgramInfo {
+  piFunctions = Map.empty,
+  piFunctionsSources = Map.empty,
+  piGlobalState = initialAnalyzerState
+}
 
 data AnalyzerState = AnalyzerState {
   asClosureState :: Maybe AnalyzerState,
-  asFreeVariables :: String,
+  asFreeVariables :: [String],
   asVars :: Vars,
   asFuns :: Overloads,
   asReturn :: VType
@@ -19,7 +38,7 @@ subscopeState parent = AnalyzerState {
   asClosureState = parent,
   asFreeVariables = [],
   asVars = Map.empty,
-  asFuns = stdlibInfo,
+  asFuns = if isJust parent then asFuns (fromJust parent) else stdlibInfo,
   asReturn = IntegerType
 }
 initialAnalyzerState = subscopeState Nothing
@@ -33,7 +52,10 @@ findVariable' name state =
     let 
       (vtype, closure') = findVariable' name (fromJust (asClosureState state))
       vars' = Map.insert name vtype (asVars state) 
-    in (vtype, state { asVars = vars', asClosureState = Just closure' })
+    in (vtype, state { 
+      asVars = vars', 
+      asClosureState = Just closure', 
+      asFreeVariables = name : (asFreeVariables state) })
   else
     error ("Variable " ++ name ++ " not found in surrounding scopes")
 
@@ -69,13 +91,7 @@ transform' (DoAll instr) = do
   let (instr', ss') = MS.runState (mapM transform' instr) ss
   MS.put (fromJust (asClosureState ss'))
   return (DoAll instr')
-transform' instr@(Declare typename idents) = 
-  let
-    typeFromName "int" = IntegerType
-    typeFromName "bool" = BoolType
-    typeFromName "str" = StringType
-    typeFromName s = error ("Unknown type '" ++ s ++ "'")
-  in do
+transform' instr@(Declare typename idents) = do
   mapM (injectVar (typeFromName typename)) idents
   return instr
 transform' (Compute expr) = do 
@@ -89,6 +105,12 @@ transform' (Decide condi condiInstr) = do
   else do
     error "Condition in if statement has no boolean type"
 transform' other = do return other
+
+typeFromName :: String -> VType
+typeFromName "int" = IntegerType
+typeFromName "bool" = BoolType
+typeFromName "str" = StringType
+typeFromName s = error ("Unknown type '" ++ s ++ "'")
 
 injectVar :: VType -> String -> State AnalyzerState ()
 -- |Append to state information about variable type
@@ -156,6 +178,54 @@ mangleName :: String -> FunctionType -> String
 mangleName basename funt = basename ++ (argsRepr' (ftArgs funt))
   
 
--- |Preform name mangling and type check
-transform :: AST -> AST
-transform ast = MS.evalState (transform' ast) initialAnalyzerState
+transformDeclaration :: AST -> State ProgramInfo ()
+transformDeclaration (DeclareFun name args rt body) = do
+  pi <- MS.get
+  let rfi = initializeRFI name args rt
+  let is = injectArgs rfi (subscopeState (Just (piGlobalState pi)))
+  let (body', is') = MS.runState (transform' body) (is { asReturn = fReturnType rfi })
+  let rfi' = rfi { fFreeVariables = asFreeVariables is' }
+  let ftype = typeOf rfi
+  MS.put (pi {
+    piFunctions = Map.insert (fName rfi') rfi' (piFunctions pi),
+    piFunctionsSources = Map.insert (fName rfi') body' (piFunctionsSources pi),
+    piGlobalState = insertFunDeclaration name ftype (piGlobalState pi) })
+  return ()
+transformDeclaration _ = 
+  error "Only variables and functions declarations can be top level constructs in program"
+
+injectArgs :: RuntimeFunctionInfo -> AnalyzerState -> AnalyzerState
+injectArgs rfi state = 
+  MS.execState (MS.mapM (\(n, _, t) -> injectVar t n) (fArgsTypes rfi)) state
+
+insertFunDeclaration :: String -> FunctionType -> AnalyzerState -> AnalyzerState
+insertFunDeclaration basename ftype state = 
+  let 
+    funs = asFuns state
+    funs' = Map.insertWith (++) basename [ftype] funs
+  in state { asFuns = funs' }
+
+initializeRFI :: String -> [Argument] -> String -> RuntimeFunctionInfo
+initializeRFI basename args ret = 
+  let 
+    decodeArg (ByVal name tname) = (name, PassVal, typeFromName tname)
+    decodeArg (ByConstVal name tname) = (name, PassVal, typeFromName tname)
+    decodeArg (ByRef name tname) = (name, PassRef, typeFromName tname)
+    args' = map decodeArg args
+    ret' = typeFromName ret
+    rfi0 = RFI {
+      fName = undefined,
+      fBoundVariables = undefined,
+      fFreeVariables = undefined,
+      fLocalFunctions = Map.empty,
+      fArgsTypes = args',
+      fReturnType = ret',
+      fBody = undefined }
+  in rfi0 { fName = mangleName basename (typeOf rfi0) }
+
+typeOf :: RuntimeFunctionInfo -> FunctionType
+typeOf rfi = 
+  let
+    rt = fReturnType rfi
+    args' = map (\(_, p, t) -> (p, t)) (fArgsTypes rfi)
+  in FTypeInfo { ftReturn = rt, ftArgs = args' }

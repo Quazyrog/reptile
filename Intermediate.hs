@@ -16,6 +16,10 @@ data ProgramState = PS {
 
 ------------------------------------ MEMORY ------------------------------------
 data VType = IntegerType | BoolType | StringType deriving (Eq, Show)
+instance NFData VType where
+  rnf IntegerType = ()
+  rnf BoolType = ()
+  rnf StringType = ()
 data VData = VInt Integer | VBool Bool | VStr String deriving Show
 instance NFData VData where
   rnf (VInt v) = v `seq` ()
@@ -101,6 +105,9 @@ updateVar vname operation = do
 
 ---------------------------------- FUNCTIONS -----------------------------------
 data ArgPassType = PassRef | PassVal deriving Show
+instance NFData ArgPassType where
+  rnf PassRef = ()
+  rnf PassVal = ()
 data Arg = Value VData | Reference Integer
 type RFIArg = (String, ArgPassType, VType)
 type FunctionBody = ByteCode
@@ -113,6 +120,13 @@ data RuntimeFunctionInfo = RFI {
   fReturnType :: VType,
   fBody :: FunctionBody
 }
+instance NFData RuntimeFunctionInfo where
+  rnf (RFI {
+    fName = name,
+    fFreeVariables = fvars,
+    fArgsTypes = args,
+    fReturnType = rt
+  }) = name `deepseq` fvars `deepseq` args `deepseq` rt `deepseq` ()
 
 type ByteCode = InterpIO (Maybe VData)
 
